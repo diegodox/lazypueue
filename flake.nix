@@ -46,7 +46,6 @@
           shellHook = ''
             echo "🚀 lazypueue development environment"
             echo "Rust version: $(rustc --version)"
-            echo "Pueue version: $(pueue --version 2>/dev/null | head -1 || echo 'not found')"
             echo ""
 
             # Set up project-local pueue configuration
@@ -58,31 +57,31 @@
             # Check if project-specific daemon is already running
             PROJECT_SOCKET=".pueue/runtime/pueue.socket"
 
-            # Quick check: socket exists and daemon process is running
-            if [ -S "$PROJECT_SOCKET" ] && pgrep -f "pueued.*$(pwd)/.pueue" > /dev/null 2>&1; then
+            # Quick check: daemon process is running for this project
+            if pgrep -f "pueued.*$(pwd)/.pueue" > /dev/null 2>&1; then
               echo "✓ Project-local pueue daemon already running"
             else
               # Clean up stale socket if it exists
-              [ -S "$PROJECT_SOCKET" ] && rm -f "$PROJECT_SOCKET"
+              [ -S "$PROJECT_SOCKET" ] && rm -f "$PROJECT_SOCKET" 2>/dev/null || true
 
               echo "📋 Starting project-local pueue daemon..."
-              # Start daemon with project-specific config
-              if pueued -c "$PUEUE_CONFIG_PATH" -d > /dev/null 2>&1; then
-                # Give daemon a moment to start
-                sleep 0.5
+              # Start daemon with project-specific config (daemonize and detach)
+              nohup pueued -c "$PUEUE_CONFIG_PATH" > /dev/null 2>&1 &
+              disown
 
-                # Verify it started
+              # Brief wait for socket creation
+              for i in 1 2 3 4 5; do
                 if [ -S "$PROJECT_SOCKET" ]; then
                   echo "✓ Project-local pueue daemon started"
                   echo "   Config: .pueue/pueue.yml"
                   echo "   Socket: $PROJECT_SOCKET"
-                else
-                  echo "⚠ Daemon may not have started properly"
-                  echo "   Run 'pueue status' to check"
+                  break
                 fi
-              else
-                echo "⚠ Failed to start pueue daemon"
-                echo "   Try manually: pueued -c .pueue/pueue.yml -d"
+                sleep 0.1
+              done
+
+              if [ ! -S "$PROJECT_SOCKET" ]; then
+                echo "⚠ Daemon starting... (run 'pueue status' to verify)"
               fi
             fi
 
