@@ -1,17 +1,20 @@
+mod app;
+mod events;
+mod pueue_client;
+mod ui;
+
 use anyhow::Result;
+use app::App;
 use clap::Parser;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    widgets::{Block, Borders, Paragraph},
-    Terminal,
-};
+use pueue_client::PueueClient;
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use std::time::Duration;
 
 #[derive(Parser, Debug)]
 #[command(name = "lazypueue")]
@@ -22,7 +25,8 @@ struct Args {
     uri: Option<String>,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let _args = Args::parse();
 
     // Setup terminal
@@ -33,7 +37,7 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Run the app
-    let res = run_app(&mut terminal);
+    let res = run_app(&mut terminal).await;
 
     // Restore terminal
     disable_raw_mode()?;
@@ -51,33 +55,32 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Result<()> {
+async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Result<()> {
+    let mut app = App::new();
+    let mut client = PueueClient::new()?;
+
+    // Initial fetch
+    app.refresh(&mut client).await?;
+
     loop {
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(90), Constraint::Percentage(10)].as_ref())
-                .split(f.area());
+        // Render UI
+        terminal.draw(|f| ui::render(f, &app))?;
 
-            let main_block = Block::default()
-                .title("Pueue Tasks")
-                .borders(Borders::ALL);
-            let main_paragraph = Paragraph::new("Welcome to lazypueue!\n\nPress 'q' to quit.")
-                .block(main_block);
-            f.render_widget(main_paragraph, chunks[0]);
-
-            let help_block = Block::default()
-                .title("Help")
-                .borders(Borders::ALL);
-            let help_paragraph = Paragraph::new("q: quit | ?: help").block(help_block);
-            f.render_widget(help_paragraph, chunks[1]);
-        })?;
-
-        if let Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Char('q') => return Ok(()),
-                _ => {}
+        // Handle events with timeout for periodic refresh
+        if event::poll(Duration::from_millis(500))? {
+            if let Event::Key(key) = event::read()? {
+                if let Some(action) = events::handle_key_event(key) {
+                    let should_quit = app.handle_action(action, &mut client).await?;
+                    if should_quit {
+                        break;
+                    }
+                }
             }
+        } else {
+            // Timeout - refresh task state
+            app.refresh(&mut client).await?;
         }
     }
+
+    Ok(())
 }
