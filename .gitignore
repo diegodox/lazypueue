@@ -1,6 +1,6 @@
 # Rust
 /target/
-Cargo.lock
+# Cargo.lock is committed for binaries (keep it for reproducible builds)
 **/*.rs.bk
 *.pdb
 
@@ -21,3 +21,10 @@ result-*
 # Testing
 *.profraw
 *.profdata
+
+# Pueue (project-local daemon)
+# Keep config file, but ignore runtime data
+.pueue/data/
+.pueue/logs/
+.pueue/runtime/
+!.pueue/pueue.yml

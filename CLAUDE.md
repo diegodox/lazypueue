@@ -10,10 +10,12 @@ lazypueue is a lazygit-style terminal UI for pueue task management, written in R
 
 This project uses **Nix flakes** for reproducible development environments. All development should be done within the Nix development shell.
 
+**Important:** The development environment automatically includes `pueue` and starts the `pueued` daemon when you enter the shell. This means you don't need to install pueue separately for development.
+
 ### Essential Commands
 
 ```bash
-# Enter development environment
+# Enter development environment (automatically starts pueued if not running)
 nix develop
 
 # Build the project
@@ -43,6 +45,82 @@ cargo fmt
 # Format check (CI)
 cargo fmt --check
 ```
+
+### Pueue Development Commands
+
+The dev environment includes pueue for testing:
+
+```bash
+# Add test tasks
+pueue add -- sleep 10
+pueue add -- echo "Hello"
+pueue add -- python -c "for i in range(100): print(i)"
+
+# Check pueue status
+pueue status
+
+# View task logs
+pueue log <task_id>
+
+# Stop project daemon
+pueue shutdown
+```
+
+### Project-Local Pueue Daemon
+
+This project uses a **project-specific pueue daemon** that is completely isolated from any system-wide pueue installation.
+
+**Directory Structure:**
+```
+.pueue/
+├── pueue.yml         # Project-local configuration
+├── data/             # Task state and metadata
+├── logs/             # Task output logs
+└── runtime/          # Unix socket for daemon communication
+```
+
+**Key Points:**
+- The daemon is automatically started when you enter `nix develop`
+- All task data is stored in `.pueue/` directory
+- Socket file is at `.pueue/runtime/pueue.socket`
+- No conflicts with system-wide or other project daemons
+- Configuration can be customized in `.pueue/pueue.yml`
+
+**Environment Variable:**
+- `PUEUE_CONFIG_PATH` is automatically set to `$(pwd)/.pueue/pueue.yml`
+- This tells pueue/pueued to use the project-local config
+
+**Daemon Lifecycle:**
+- Daemon starts automatically in `nix develop` shell
+- Daemon persists after exiting shell (reconnectable)
+- Stop with: `pueue shutdown`
+- Daemon state persists across restarts (stored in `.pueue/data/`)
+
+**Troubleshooting:**
+```bash
+# Check if daemon is running
+pueue status
+
+# View daemon socket
+ls -la .pueue/runtime/pueue.socket
+
+# Manually start daemon (if stopped)
+pueued -c .pueue/pueue.yml -d
+
+# Stop daemon
+pueue shutdown
+
+# Clean all task data (nuclear option)
+rm -rf .pueue/{data,logs,runtime}
+```
+
+**Customization:**
+Edit `.pueue/pueue.yml` to customize:
+- Parallel task limits
+- Shell command
+- Environment variables for all tasks
+- Callback hooks
+- Time display formats
 
 ## Architecture
 
