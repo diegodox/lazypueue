@@ -13,8 +13,15 @@ impl PueueClient {
     pub async fn new() -> Result<Self> {
         let (settings, _) = Settings::read(&None)?;
 
-        eprintln!("Socket path: {}", settings.shared.unix_socket_path().display());
-        eprintln!("Use unix socket: {}", settings.shared.use_unix_socket);
+        // Read shared secret before consuming settings
+        let secret_path = settings.shared.shared_secret_path();
+        let secret = if secret_path.exists() {
+            std::fs::read(&secret_path)
+                .map_err(|e| anyhow::anyhow!("Failed to read shared secret: {}", e))?
+        } else {
+            // Use empty secret if file doesn't exist (typically for Unix sockets without auth)
+            vec![]
+        };
 
         // Convert Shared to ConnectionSettings
         let connection_settings: pueue_lib::network::protocol::ConnectionSettings = settings
@@ -22,16 +29,11 @@ impl PueueClient {
             .try_into()
             .map_err(|e| anyhow::anyhow!("Failed to create connection settings: {}", e))?;
 
-        // Use empty secret for Unix socket connections (no TLS)
-        let secret = vec![];
-
-        eprintln!("Creating client...");
         // Create the client
         let client = Client::new(connection_settings, &secret, false)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create client: {}", e))?;
 
-        eprintln!("Client created!");
         Ok(Self { client })
     }
 

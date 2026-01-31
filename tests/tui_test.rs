@@ -12,8 +12,6 @@ async fn test_tui_renders() -> Result<()> {
         }
     }
 
-    println!("Using config: {:?}", std::env::var("PUEUE_CONFIG_PATH"));
-
     // Give daemon a moment to be fully ready
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
@@ -23,10 +21,7 @@ async fn test_tui_renders() -> Result<()> {
 
     // Create app and client
     let mut app = App::new();
-
-    println!("Creating pueue client...");
     let mut client = PueueClient::new().await?;
-    println!("Client created successfully");
 
     // Try to refresh state from daemon
     println!("Attempting to connect to pueue daemon...");
