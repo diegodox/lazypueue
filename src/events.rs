@@ -1,6 +1,36 @@
 use crate::app::Action;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+/// Handle key events when in text input mode
+pub fn handle_input_mode_key_event(key: KeyEvent) -> Option<Action> {
+    match key.code {
+        // Submit
+        KeyCode::Enter => Some(Action::SubmitInput),
+        // Cancel
+        KeyCode::Esc => Some(Action::CancelInput),
+        // Text editing
+        KeyCode::Backspace => Some(Action::InputBackspace),
+        KeyCode::Delete => Some(Action::InputDelete),
+        KeyCode::Left => Some(Action::InputLeft),
+        KeyCode::Right => Some(Action::InputRight),
+        KeyCode::Home => Some(Action::InputHome),
+        KeyCode::End => Some(Action::InputEnd),
+        // Ctrl shortcuts
+        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(Action::InputHome)
+        }
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(Action::InputEnd)
+        }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(Action::CancelInput)
+        }
+        // Regular characters
+        KeyCode::Char(c) => Some(Action::InputChar(c)),
+        _ => None,
+    }
+}
+
 /// Handle key events when the log modal is open
 pub fn handle_log_modal_key_event(key: KeyEvent) -> Option<Action> {
     match key.code {
@@ -45,9 +75,13 @@ pub fn handle_key_event(key: KeyEvent) -> Option<Action> {
         // Task management
         KeyCode::Char('K') => Some(Action::KillTask),
         KeyCode::Char('p') => Some(Action::TogglePause),
+        KeyCode::Char(' ') => Some(Action::ToggleTaskPause),
         KeyCode::Char('r') => Some(Action::Refresh),
         KeyCode::Char('R') => Some(Action::RestartTask),
         KeyCode::Char('c') => Some(Action::CleanFinished),
+        KeyCode::Char('a') => Some(Action::StartAddTask),
+        KeyCode::Char('e') => Some(Action::StartEditTask),
+        KeyCode::Char('d') | KeyCode::Char('x') => Some(Action::RemoveTask),
 
         // Viewing
         KeyCode::Enter | KeyCode::Char('l') => Some(Action::ViewLogs),

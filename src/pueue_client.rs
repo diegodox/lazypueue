@@ -1,12 +1,14 @@
 use anyhow::Result;
 use pueue_lib::message::request::{
-    CleanRequest, KillRequest, LogRequest, PauseRequest, Request, RestartRequest, StartRequest,
-    TaskSelection, TaskToRestart,
+    AddRequest, CleanRequest, KillRequest, LogRequest, PauseRequest, Request, RestartRequest,
+    StartRequest, TaskSelection, TaskToRestart,
 };
 use pueue_lib::message::response::*;
+use pueue_lib::message::EditableTask;
 use pueue_lib::network::client::Client;
 use pueue_lib::settings::Settings;
 use pueue_lib::state::State;
+use std::path::PathBuf;
 
 pub struct PueueClient {
     client: Client,
@@ -153,6 +155,115 @@ impl PueueClient {
         match response {
             Response::Success(_) => Ok(()),
             Response::Failure(text) => Err(anyhow::anyhow!("Failed to clean tasks: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    pub async fn add(&mut self, command: String) -> Result<usize> {
+        let request = Request::Add(AddRequest {
+            command,
+            path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+            envs: std::collections::HashMap::new(),
+            start_immediately: false,
+            stashed: false,
+            group: "default".to_string(),
+            enqueue_at: None,
+            dependencies: vec![],
+            priority: None,
+            label: None,
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::AddedTask(added) => Ok(added.task_id),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to add task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    pub async fn remove(&mut self, task_ids: Vec<usize>) -> Result<()> {
+        let request = Request::Remove(task_ids);
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to remove task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    pub async fn pause_tasks(&mut self, task_ids: Vec<usize>) -> Result<()> {
+        let request = Request::Pause(PauseRequest {
+            tasks: TaskSelection::TaskIds(task_ids),
+            wait: false,
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to pause task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    pub async fn start_tasks(&mut self, task_ids: Vec<usize>) -> Result<()> {
+        let request = Request::Start(StartRequest {
+            tasks: TaskSelection::TaskIds(task_ids),
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to start task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    /// Request to edit a task. Returns the editable task info if successful.
+    pub async fn edit_request(&mut self, task_id: usize) -> Result<EditableTask> {
+        let request = Request::EditRequest(vec![task_id]);
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Edit(mut tasks) => {
+                if let Some(task) = tasks.pop() {
+                    Ok(task)
+                } else {
+                    Err(anyhow::anyhow!("No task returned for editing"))
+                }
+            }
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to edit task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    /// Restore the original task state (cancel edit).
+    pub async fn edit_restore(&mut self, task_id: usize) -> Result<()> {
+        let request = Request::EditRestore(vec![task_id]);
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to restore task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    /// Submit the edited task.
+    pub async fn edit_submit(&mut self, task: EditableTask) -> Result<()> {
+        let request = Request::EditedTasks(vec![task]);
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to submit edit: {}", text)),
             _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
         }
     }

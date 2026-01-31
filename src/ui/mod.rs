@@ -1,8 +1,10 @@
 mod details;
+pub mod input;
 mod status_bar;
 mod task_list;
 
 pub use details::render_details_panel;
+pub use input::{render_input_dialog, TextInput};
 pub use status_bar::{render_help_bar, render_status_bar};
 pub use task_list::render_task_list;
 
@@ -50,6 +52,16 @@ pub fn render(f: &mut Frame, app: &App) {
     // Render log modal if active
     if app.show_log_modal {
         render_log_modal(f, app);
+    }
+
+    // Render input dialog if in input mode
+    if let Some(input_mode) = &app.input_mode {
+        let title = match input_mode {
+            crate::app::InputMode::AddTask => "Add Task (Enter: submit, Esc: cancel)",
+            crate::app::InputMode::EditTask(_) => "Edit Task (Enter: submit, Esc: cancel)",
+        };
+        let area = input_dialog_rect(f.area());
+        render_input_dialog(f, title, &app.text_input, area);
     }
 }
 
@@ -135,6 +147,27 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
             Constraint::Percentage(percent_x),
             Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
+}
+
+fn input_dialog_rect(r: Rect) -> Rect {
+    // Create a centered dialog that's 80% wide and 3 lines tall
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Length(3),
+            Constraint::Percentage(60),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(10),
+            Constraint::Percentage(80),
+            Constraint::Percentage(10),
         ])
         .split(popup_layout[1])[1]
 }

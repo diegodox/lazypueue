@@ -73,8 +73,10 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Re
         // Handle events with timeout for periodic refresh
         if event::poll(poll_duration)? {
             if let Event::Key(key) = event::read()? {
-                // Use different event handler when log modal is open
-                let action = if app.show_log_modal {
+                // Use different event handler based on current mode
+                let action = if app.input_mode.is_some() {
+                    events::handle_input_mode_key_event(key)
+                } else if app.show_log_modal {
                     events::handle_log_modal_key_event(key)
                 } else {
                     events::handle_key_event(key)

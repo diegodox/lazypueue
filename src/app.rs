@@ -1,8 +1,11 @@
 use anyhow::Result;
+use pueue_lib::message::EditableTask;
 use pueue_lib::state::State;
+use pueue_lib::task::TaskStatus;
 use std::time::Instant;
 
 use crate::pueue_client::PueueClient;
+use crate::ui::TextInput;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
@@ -12,6 +15,7 @@ pub enum Action {
     NavigateBottom,
     KillTask,
     TogglePause,
+    ToggleTaskPause,
     Refresh,
     ViewLogs,
     CloseLogs,
@@ -22,7 +26,27 @@ pub enum Action {
     ScrollLogDown,
     ScrollLogPageUp,
     ScrollLogPageDown,
+    // Input mode actions
+    StartAddTask,
+    StartEditTask,
+    RemoveTask,
+    SubmitInput,
+    CancelInput,
+    InputChar(char),
+    InputBackspace,
+    InputDelete,
+    InputLeft,
+    InputRight,
+    InputHome,
+    InputEnd,
     Quit,
+}
+
+/// Mode for text input dialogs
+#[derive(Debug, Clone)]
+pub enum InputMode {
+    AddTask,
+    EditTask(EditableTask),
 }
 
 pub struct App {
@@ -34,6 +58,9 @@ pub struct App {
     pub log_scroll: usize,
     pub follow_mode: bool,
     pub error_message: Option<String>,
+    // Input mode state
+    pub input_mode: Option<InputMode>,
+    pub text_input: TextInput,
 }
 
 impl Default for App {
@@ -47,6 +74,8 @@ impl Default for App {
             log_scroll: 0,
             follow_mode: false,
             error_message: None,
+            input_mode: None,
+            text_input: TextInput::new(),
         }
     }
 }
@@ -224,6 +253,131 @@ impl App {
                         }
                     }
                 }
+            }
+            Action::ToggleTaskPause => {
+                if let Some(task_id) = self.get_selected_task_id() {
+                    if let Some(state) = &self.state {
+                        if let Some(task) = state.tasks.get(&task_id) {
+                            match &task.status {
+                                TaskStatus::Paused { .. } => {
+                                    if let Err(e) = client.start_tasks(vec![task_id]).await {
+                                        self.error_message =
+                                            Some(format!("Failed to resume task: {}", e));
+                                    }
+                                }
+                                TaskStatus::Running { .. } => {
+                                    if let Err(e) = client.pause_tasks(vec![task_id]).await {
+                                        self.error_message =
+                                            Some(format!("Failed to pause task: {}", e));
+                                    }
+                                }
+                                TaskStatus::Queued { .. } => {
+                                    // Start queued task immediately
+                                    if let Err(e) = client.start_tasks(vec![task_id]).await {
+                                        self.error_message =
+                                            Some(format!("Failed to start task: {}", e));
+                                    }
+                                }
+                                _ => {
+                                    // Can't pause/resume completed or stashed tasks
+                                }
+                            }
+                            self.refresh(client).await?;
+                        }
+                    }
+                }
+            }
+            Action::StartAddTask => {
+                self.text_input.clear();
+                self.input_mode = Some(InputMode::AddTask);
+            }
+            Action::StartEditTask => {
+                if let Some(task_id) = self.get_selected_task_id() {
+                    match client.edit_request(task_id).await {
+                        Ok(editable) => {
+                            self.text_input =
+                                TextInput::with_value(editable.original_command.clone());
+                            self.input_mode = Some(InputMode::EditTask(editable));
+                        }
+                        Err(e) => {
+                            self.error_message = Some(format!("Failed to edit task: {}", e));
+                        }
+                    }
+                }
+            }
+            Action::RemoveTask => {
+                if let Some(task_id) = self.get_selected_task_id() {
+                    if let Some(state) = &self.state {
+                        if let Some(task) = state.tasks.get(&task_id) {
+                            // Only allow removing non-running tasks
+                            if !matches!(task.status, TaskStatus::Running { .. }) {
+                                if let Err(e) = client.remove(vec![task_id]).await {
+                                    self.error_message =
+                                        Some(format!("Failed to remove task: {}", e));
+                                } else {
+                                    self.refresh(client).await?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Action::SubmitInput => {
+                if let Some(mode) = self.input_mode.take() {
+                    let command = self.text_input.value.clone();
+                    if !command.trim().is_empty() {
+                        match mode {
+                            InputMode::AddTask => match client.add(command).await {
+                                Ok(_task_id) => {
+                                    self.refresh(client).await?;
+                                }
+                                Err(e) => {
+                                    self.error_message = Some(format!("Failed to add task: {}", e));
+                                }
+                            },
+                            InputMode::EditTask(mut editable) => {
+                                editable.original_command = command;
+                                if let Err(e) = client.edit_submit(editable).await {
+                                    self.error_message =
+                                        Some(format!("Failed to save edit: {}", e));
+                                } else {
+                                    self.refresh(client).await?;
+                                }
+                            }
+                        }
+                    }
+                    self.text_input.clear();
+                }
+            }
+            Action::CancelInput => {
+                if let Some(mode) = self.input_mode.take() {
+                    // If editing, restore the original task state
+                    if let InputMode::EditTask(editable) = mode {
+                        let _ = client.edit_restore(editable.id).await;
+                    }
+                    self.text_input.clear();
+                }
+            }
+            Action::InputChar(c) => {
+                self.text_input.insert(c);
+            }
+            Action::InputBackspace => {
+                self.text_input.delete_char();
+            }
+            Action::InputDelete => {
+                self.text_input.delete_forward();
+            }
+            Action::InputLeft => {
+                self.text_input.move_left();
+            }
+            Action::InputRight => {
+                self.text_input.move_right();
+            }
+            Action::InputHome => {
+                self.text_input.move_start();
+            }
+            Action::InputEnd => {
+                self.text_input.move_end();
             }
             Action::Quit => {
                 return Ok(true);
