@@ -18,7 +18,7 @@ crossterm = "0.28"
 tokio = { version = "1.41", features = ["full"] }
 
 # Pueue client
-pueue-lib = "0.27"
+pueue-lib = { version = "0.30", features = ["client"] }
 
 # Error handling and utilities
 anyhow = "1.0"

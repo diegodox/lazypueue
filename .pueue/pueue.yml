@@ -1,49 +1,21 @@
-# Project-local Pueue configuration for lazypueue development
-# This configuration isolates this project's pueue daemon from system-wide instances
+# Auto-generated project-local Pueue configuration
+# This file is regenerated on each shell entry
 
 shared:
-  # Use project-local directory for all data
-  pueue_directory: ".pueue/data"
-  runtime_directory: ".pueue/runtime"
-
-  # Use Unix socket (more reliable for local development)
+  pueue_directory: "/home/diego/src/github.com/diego/lazypueue/.pueue/data"
+  runtime_directory: "/home/diego/src/github.com/diego/lazypueue/.pueue/runtime"
   use_unix_socket: true
-  unix_socket_path: ".pueue/runtime/pueue.socket"
-
-  # Security settings (not critical for local dev, but good practice)
-  # shared_secret_path: ".pueue/secret"
+  unix_socket_path: "/home/diego/src/github.com/diego/lazypueue/.pueue/runtime/pueue.socket"
 
 client:
-  # Read logs directly from disk (faster for local dev)
   read_local_logs: true
-
-  # Restart tasks in the same place instead of creating new ones
   restart_in_place: true
-
-  # Show confirmation prompts for dangerous operations
   show_confirmation_questions: true
-
-  # Use dark color scheme (can be changed based on preference)
   dark_mode: true
-
-  # Time formatting for status display
   status_time_format: "%H:%M:%S"
   status_datetime_format: "%Y-%m-%d %H:%M"
 
 daemon:
-  # Default settings for development
   default_parallel_tasks: 3
-
-  # Don't pause entire group on single task failure
   pause_group_on_failure: false
   pause_all_on_failure: false
-
-  # Optional: Run a callback command after each task completes
-  # callback: "echo 'Task {{id}} finished with status {{result}}'"
-
-  # Optional: Use a custom shell (default is system shell)
-  # shell_command: ["/bin/bash", "-c"]
-
-  # Optional: Inject environment variables into all tasks
-  # env_vars:
-  #   PROJECT_ROOT: "/path/to/lazypueue"

@@ -23,8 +23,5 @@ result-*
 *.profdata
 
 # Pueue (project-local daemon)
-# Keep config file, but ignore runtime data
-.pueue/data/
-.pueue/logs/
-.pueue/runtime/
-!.pueue/pueue.yml
+# Config is auto-generated in flake.nix shellHook
+.pueue/

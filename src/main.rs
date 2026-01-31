@@ -1,17 +1,14 @@
-mod app;
-mod events;
-mod pueue_client;
-mod ui;
-
 use anyhow::Result;
-use app::App;
+use lazypueue::app::App;
+use lazypueue::events;
+use lazypueue::pueue_client::PueueClient;
+use lazypueue::ui;
 use clap::Parser;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use pueue_client::PueueClient;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::time::Duration;
@@ -29,12 +26,17 @@ struct Args {
 async fn main() -> Result<()> {
     let _args = Args::parse();
 
+    eprintln!("Starting lazypueue...");
+
     // Setup terminal
+    eprintln!("Setting up terminal...");
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    eprintln!("Terminal setup complete");
 
     // Run the app
     let res = run_app(&mut terminal).await;
@@ -57,10 +59,23 @@ async fn main() -> Result<()> {
 
 async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Result<()> {
     let mut app = App::new();
-    let mut client = PueueClient::new()?;
+
+    eprintln!("Creating pueue client...");
+    let mut client = match PueueClient::new().await {
+        Ok(c) => {
+            eprintln!("Client created successfully");
+            c
+        }
+        Err(e) => {
+            eprintln!("Failed to create client: {}", e);
+            return Err(e);
+        }
+    };
 
     // Initial fetch
+    eprintln!("Fetching initial state...");
     app.refresh(&mut client).await?;
+    eprintln!("Initial state fetched");
 
     loop {
         // Render UI

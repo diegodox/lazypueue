@@ -48,11 +48,36 @@
             echo "Rust version: $(rustc --version)"
             echo ""
 
-            # Set up project-local pueue configuration
-            export PUEUE_CONFIG_PATH="$(pwd)/.pueue/pueue.yml"
-
             # Create pueue directories if they don't exist
             mkdir -p .pueue/{data,logs,runtime}
+
+            # Generate project-local pueue configuration with absolute paths
+            PROJECT_ROOT="$(pwd)"
+            export PUEUE_CONFIG_PATH="$PROJECT_ROOT/.pueue/pueue.yml"
+
+            cat > "$PUEUE_CONFIG_PATH" << EOF
+# Auto-generated project-local Pueue configuration
+# This file is regenerated on each shell entry
+
+shared:
+  pueue_directory: "$PROJECT_ROOT/.pueue/data"
+  runtime_directory: "$PROJECT_ROOT/.pueue/runtime"
+  use_unix_socket: true
+  unix_socket_path: "$PROJECT_ROOT/.pueue/runtime/pueue.socket"
+
+client:
+  read_local_logs: true
+  restart_in_place: true
+  show_confirmation_questions: true
+  dark_mode: true
+  status_time_format: "%H:%M:%S"
+  status_datetime_format: "%Y-%m-%d %H:%M"
+
+daemon:
+  default_parallel_tasks: 3
+  pause_group_on_failure: false
+  pause_all_on_failure: false
+EOF
 
             # Check if project-specific daemon is already running
             PROJECT_SOCKET=".pueue/runtime/pueue.socket"
