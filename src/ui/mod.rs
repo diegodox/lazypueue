@@ -70,20 +70,50 @@ fn render_error(f: &mut Frame, error: &str) {
 
 fn render_log_modal(f: &mut Frame, app: &App) {
     if let Some(task_id) = app.get_selected_task_id() {
+        let follow_indicator = if app.follow_mode { " [FOLLOW]" } else { "" };
+        let title = format!(
+            "Logs - Task #{}{} (q/Enter:close, j/k:scroll, f:follow)",
+            task_id, follow_indicator
+        );
+
         let log_block = Block::default()
-            .title(format!("Logs - Task #{} (Press Enter to close)", task_id))
+            .title(title)
             .borders(Borders::ALL)
-            .style(Style::default());
+            .border_style(if app.follow_mode {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default()
+            });
 
-        // For MVP, show a message that log viewing will be implemented
-        // This requires async file reading which we'll add in the next iteration
-        let output = "Log viewing will be implemented in the next version.\n\nFor now, use 'pueue log <task_id>' to view logs.";
+        let output = app.log_content.as_deref().unwrap_or("(Loading logs...)");
 
-        let log_text = Paragraph::new(output)
-            .block(log_block)
-            .wrap(Wrap { trim: false });
-
+        // Calculate area for the log content
         let area = centered_rect(90, 90, f.area());
+        let inner_height = area.height.saturating_sub(2) as usize; // Account for borders
+
+        // Split output into lines for scrolling
+        let lines: Vec<&str> = output.lines().collect();
+        let total_lines = lines.len();
+
+        // Calculate scroll position
+        let scroll = if app.follow_mode || app.log_scroll == usize::MAX {
+            // Follow mode: show the last lines
+            total_lines.saturating_sub(inner_height)
+        } else {
+            app.log_scroll.min(total_lines.saturating_sub(inner_height))
+        };
+
+        // Get visible lines
+        let visible_lines: String = lines
+            .iter()
+            .skip(scroll)
+            .take(inner_height)
+            .copied()
+            .collect::<Vec<&str>>()
+            .join("\n");
+
+        let log_text = Paragraph::new(visible_lines).block(log_block);
+
         f.render_widget(Clear, area);
         f.render_widget(log_text, area);
     }

@@ -63,10 +63,24 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Re
         // Render UI
         terminal.draw(|f| ui::render(f, &app))?;
 
+        // Use shorter poll interval when in follow mode
+        let poll_duration = if app.follow_mode {
+            Duration::from_millis(200)
+        } else {
+            Duration::from_millis(500)
+        };
+
         // Handle events with timeout for periodic refresh
-        if event::poll(Duration::from_millis(500))? {
+        if event::poll(poll_duration)? {
             if let Event::Key(key) = event::read()? {
-                if let Some(action) = events::handle_key_event(key) {
+                // Use different event handler when log modal is open
+                let action = if app.show_log_modal {
+                    events::handle_log_modal_key_event(key)
+                } else {
+                    events::handle_key_event(key)
+                };
+
+                if let Some(action) = action {
                     let should_quit = app.handle_action(action, &mut client).await?;
                     if should_quit {
                         break;
@@ -74,8 +88,9 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Re
                 }
             }
         } else {
-            // Timeout - refresh task state
+            // Timeout - refresh task state and logs if in follow mode
             app.refresh(&mut client).await?;
+            app.refresh_logs(&mut client).await?;
         }
     }
 

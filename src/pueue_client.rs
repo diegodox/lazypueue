@@ -1,5 +1,8 @@
 use anyhow::Result;
-use pueue_lib::message::request::*;
+use pueue_lib::message::request::{
+    CleanRequest, KillRequest, LogRequest, PauseRequest, Request, RestartRequest, StartRequest,
+    TaskSelection, TaskToRestart,
+};
 use pueue_lib::message::response::*;
 use pueue_lib::network::client::Client;
 use pueue_lib::settings::Settings;
@@ -96,6 +99,61 @@ impl PueueClient {
         }
     }
 
-    // Log viewing will be implemented in the next iteration
-    // For now, users can use `pueue log <task_id>` command
+    pub async fn get_log(&mut self, task_id: usize) -> Result<String> {
+        let request = Request::Log(LogRequest {
+            tasks: TaskSelection::TaskIds(vec![task_id]),
+            send_logs: true,
+            lines: None, // Get all lines
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Log(logs) => {
+                if let Some(task_log) = logs.get(&task_id) {
+                    if let Some(output) = &task_log.output {
+                        // Convert bytes to string, handling potential encoding issues
+                        Ok(String::from_utf8_lossy(output).to_string())
+                    } else {
+                        Ok("(No output)".to_string())
+                    }
+                } else {
+                    Ok("(No log found for this task)".to_string())
+                }
+            }
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to get log: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    pub async fn restart(&mut self, tasks_info: Vec<TaskToRestart>) -> Result<()> {
+        let request = Request::Restart(RestartRequest {
+            tasks: tasks_info,
+            start_immediately: false,
+            stashed: false,
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to restart task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    pub async fn clean(&mut self, successful_only: bool) -> Result<()> {
+        let request = Request::Clean(CleanRequest {
+            successful_only,
+            group: None, // Clean all groups
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to clean tasks: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
 }
