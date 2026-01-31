@@ -41,7 +41,10 @@ async fn test_tui_renders() -> Result<()> {
         if app.error_message.is_none() {
             println!("✓ Connected to daemon on retry");
         } else {
-            println!("⚠ Daemon not available: {}", app.error_message.as_ref().unwrap());
+            println!(
+                "⚠ Daemon not available: {}",
+                app.error_message.as_ref().unwrap()
+            );
         }
     }
 
@@ -55,7 +58,7 @@ async fn test_tui_renders() -> Result<()> {
     for y in 0..24 {
         let mut line = String::new();
         for x in 0..80 {
-            let cell = &buffer[( x, y)];
+            let cell = &buffer[(x, y)];
             line.push_str(cell.symbol());
         }
         println!("{}", line);
@@ -97,7 +100,7 @@ async fn test_tui_renders() -> Result<()> {
 
 #[test]
 fn test_app_state_management() {
-    let mut app = App::new();
+    let app = App::new();
 
     // Test initial state
     assert_eq!(app.selected_index, 0);

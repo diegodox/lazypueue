@@ -47,12 +47,7 @@ pub fn render_task_list(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title("Tasks")
-                .borders(Borders::ALL)
-        );
+    let list = List::new(items).block(Block::default().title("Tasks").borders(Borders::ALL));
 
     f.render_widget(list, area);
 }
@@ -67,7 +62,9 @@ fn get_status_icon_and_color(status: &TaskStatus) -> (&str, Color) {
         TaskStatus::Stashed { .. } => ("⊡", Color::Gray),
         TaskStatus::Done { result, .. } => match result {
             TaskResult::Success => ("✓", Color::Green),
-            TaskResult::Failed(_) | TaskResult::FailedToSpawn(_) | TaskResult::DependencyFailed => ("✗", Color::Red),
+            TaskResult::Failed(_) | TaskResult::FailedToSpawn(_) | TaskResult::DependencyFailed => {
+                ("✗", Color::Red)
+            }
             TaskResult::Killed => ("⊠", Color::Magenta),
             TaskResult::Errored => ("⚠", Color::Red),
         },

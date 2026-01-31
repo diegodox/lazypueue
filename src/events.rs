@@ -10,8 +10,8 @@ pub fn handle_key_event(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('G') => Some(Action::NavigateBottom),
 
         // Task management
-        KeyCode::Char('K') => Some(Action::KillTask),  // Capital K to avoid accidental kills
-        KeyCode::Char('p') => Some(Action::PauseDaemon),
+        KeyCode::Char('K') => Some(Action::KillTask),
+        KeyCode::Char('p') => Some(Action::TogglePause),
         KeyCode::Char('r') => Some(Action::Refresh),
 
         // Viewing

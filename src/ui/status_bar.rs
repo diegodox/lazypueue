@@ -30,9 +30,10 @@ pub fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
         let pause_status = if let Some(group) = default_group {
             match group.status {
-                pueue_lib::state::GroupStatus::Paused => {
-                    Span::styled(" [PAUSED]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
-                }
+                pueue_lib::state::GroupStatus::Paused => Span::styled(
+                    " [PAUSED]",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 _ => Span::raw(""),
             }
         } else {
@@ -41,9 +42,15 @@ pub fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
         Line::from(vec![
             Span::styled("Tasks: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{} running", running_count), Style::default().fg(Color::Green)),
+            Span::styled(
+                format!("{} running", running_count),
+                Style::default().fg(Color::Green),
+            ),
             Span::raw(" | "),
-            Span::styled(format!("{} queued", queued_count), Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!("{} queued", queued_count),
+                Style::default().fg(Color::Yellow),
+            ),
             Span::raw(" | "),
             Span::raw(format!("{} total", total_count)),
             Span::raw(" | "),
@@ -55,8 +62,8 @@ pub fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         Line::from("Connecting to pueue daemon...")
     };
 
-    let status = Paragraph::new(status_text)
-        .block(Block::default().title("Status").borders(Borders::ALL));
+    let status =
+        Paragraph::new(status_text).block(Block::default().title("Status").borders(Borders::ALL));
 
     f.render_widget(status, area);
 }
@@ -77,8 +84,8 @@ pub fn render_help_bar(f: &mut Frame, area: Rect) {
         Span::raw(":quit"),
     ]);
 
-    let help = Paragraph::new(help_text)
-        .block(Block::default().title("Help").borders(Borders::ALL));
+    let help =
+        Paragraph::new(help_text).block(Block::default().title("Help").borders(Borders::ALL));
 
     f.render_widget(help, area);
 }

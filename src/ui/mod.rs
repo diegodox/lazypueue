@@ -7,11 +7,9 @@ pub use status_bar::{render_help_bar, render_status_bar};
 pub use task_list::render_task_list;
 
 use crate::app::App;
-use crate::pueue_client::PueueClient;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
+    style::{Color, Style},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
@@ -27,9 +25,9 @@ pub fn render(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Status bar
-            Constraint::Min(0),     // Main content
-            Constraint::Length(3),  // Help bar
+            Constraint::Length(3), // Status bar
+            Constraint::Min(0),    // Main content
+            Constraint::Length(3), // Help bar
         ])
         .split(f.area());
 

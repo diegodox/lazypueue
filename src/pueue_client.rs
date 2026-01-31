@@ -39,7 +39,9 @@ impl PueueClient {
 
     pub async fn get_state(&mut self) -> Result<State> {
         self.client.send_request(Request::Status).await?;
-        let response = self.client.receive_response()
+        let response = self
+            .client
+            .receive_response()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to receive response: {}", e))?;
 

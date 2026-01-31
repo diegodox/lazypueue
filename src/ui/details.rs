@@ -39,7 +39,12 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
             let start_str = start.format("%Y-%m-%d %H:%M:%S").to_string();
             let dur = chrono::Local::now() - *start;
             let dur_str = format_duration(dur.num_seconds());
-            (("Running", Color::Green), start_str, dur_str, "-".to_string())
+            (
+                ("Running", Color::Green),
+                start_str,
+                dur_str,
+                "-".to_string(),
+            )
         }
         TaskStatus::Paused { start, .. } => {
             let start_str = start.format("%Y-%m-%d %H:%M:%S").to_string();
@@ -47,7 +52,9 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
             let dur_str = format_duration(dur.num_seconds());
             (("Paused", Color::Cyan), start_str, dur_str, "-".to_string())
         }
-        TaskStatus::Done { start, end, result, .. } => {
+        TaskStatus::Done {
+            start, end, result, ..
+        } => {
             let start_str = start.format("%Y-%m-%d %H:%M:%S").to_string();
             let dur = *end - *start;
             let dur_str = format_duration(dur.num_seconds());
@@ -66,15 +73,24 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
             };
             ((status_label, color), start_str, dur_str, exit_code_str)
         }
-        TaskStatus::Queued { .. } => {
-            (("Queued", Color::Yellow), "Not started".to_string(), "-".to_string(), "-".to_string())
-        }
-        TaskStatus::Stashed { .. } => {
-            (("Stashed", Color::Gray), "Not started".to_string(), "-".to_string(), "-".to_string())
-        }
-        TaskStatus::Locked { .. } => {
-            (("Locked", Color::Magenta), "Locked".to_string(), "-".to_string(), "-".to_string())
-        }
+        TaskStatus::Queued { .. } => (
+            ("Queued", Color::Yellow),
+            "Not started".to_string(),
+            "-".to_string(),
+            "-".to_string(),
+        ),
+        TaskStatus::Stashed { .. } => (
+            ("Stashed", Color::Gray),
+            "Not started".to_string(),
+            "-".to_string(),
+            "-".to_string(),
+        ),
+        TaskStatus::Locked { .. } => (
+            ("Locked", Color::Magenta),
+            "Locked".to_string(),
+            "-".to_string(),
+            "-".to_string(),
+        ),
     };
 
     let lines = vec![
@@ -104,8 +120,8 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
         ]),
     ];
 
-    let metadata = Paragraph::new(lines)
-        .block(Block::default().title("Details").borders(Borders::ALL));
+    let metadata =
+        Paragraph::new(lines).block(Block::default().title("Details").borders(Borders::ALL));
 
     f.render_widget(metadata, area);
 }
@@ -114,17 +130,15 @@ fn render_output(f: &mut Frame, task: &pueue_lib::task::Task, area: Rect) {
     // For MVP, show a placeholder for output
     // Full log reading will be implemented in next iteration
     let output = match &task.status {
-        TaskStatus::Running { .. } => "Task is running...\n(Press Enter to view full logs)".to_string(),
+        TaskStatus::Running { .. } => {
+            "Task is running...\n(Press Enter to view full logs)".to_string()
+        }
         TaskStatus::Done { .. } => "Task completed.\n(Press Enter to view full logs)".to_string(),
         _ => "No output available yet.".to_string(),
     };
 
     let output_widget = Paragraph::new(output)
-        .block(
-            Block::default()
-                .title("Output")
-                .borders(Borders::ALL)
-        )
+        .block(Block::default().title("Output").borders(Borders::ALL))
         .wrap(Wrap { trim: false });
 
     f.render_widget(output_widget, area);

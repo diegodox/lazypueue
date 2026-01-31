@@ -11,8 +11,7 @@ pub enum Action {
     NavigateTop,
     NavigateBottom,
     KillTask,
-    PauseDaemon,
-    ResumeDaemon,
+    TogglePause,
     Refresh,
     ViewLogs,
     Quit,
@@ -26,8 +25,8 @@ pub struct App {
     pub error_message: Option<String>,
 }
 
-impl App {
-    pub fn new() -> Self {
+impl Default for App {
+    fn default() -> Self {
         Self {
             state: None,
             selected_index: 0,
@@ -35,6 +34,12 @@ impl App {
             show_log_modal: false,
             error_message: None,
         }
+    }
+}
+
+impl App {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub async fn refresh(&mut self, client: &mut PueueClient) -> Result<()> {
@@ -61,7 +66,11 @@ impl App {
         Ok(())
     }
 
-    pub async fn handle_action(&mut self, action: Action, client: &mut PueueClient) -> Result<bool> {
+    pub async fn handle_action(
+        &mut self,
+        action: Action,
+        client: &mut PueueClient,
+    ) -> Result<bool> {
         match action {
             Action::NavigateUp => {
                 if self.selected_index > 0 {
@@ -93,8 +102,7 @@ impl App {
                     self.refresh(client).await?;
                 }
             }
-            Action::PauseDaemon => {
-                // Toggle pause/resume for default group
+            Action::TogglePause => {
                 if let Some(state) = &self.state {
                     if let Some(group) = state.groups.get("default") {
                         match group.status {
@@ -108,10 +116,6 @@ impl App {
                     }
                     self.refresh(client).await?;
                 }
-            }
-            Action::ResumeDaemon => {
-                client.start().await?;
-                self.refresh(client).await?;
             }
             Action::Refresh => {
                 self.refresh(client).await?;

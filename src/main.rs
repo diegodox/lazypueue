@@ -1,14 +1,14 @@
 use anyhow::Result;
-use lazypueue::app::App;
-use lazypueue::events;
-use lazypueue::pueue_client::PueueClient;
-use lazypueue::ui;
 use clap::Parser;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use lazypueue::app::App;
+use lazypueue::events;
+use lazypueue::pueue_client::PueueClient;
+use lazypueue::ui;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::time::Duration;
