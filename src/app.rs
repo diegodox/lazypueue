@@ -39,6 +39,13 @@ pub enum Action {
     InputRight,
     InputHome,
     InputEnd,
+    // Phase 2: Power features
+    StashTask,
+    EnqueueTask,
+    SwitchUp,
+    SwitchDown,
+    IncreaseParallel,
+    DecreaseParallel,
     Quit,
 }
 
@@ -378,6 +385,100 @@ impl App {
             }
             Action::InputEnd => {
                 self.text_input.move_end();
+            }
+            Action::StashTask => {
+                if let Some(task_id) = self.get_selected_task_id() {
+                    if let Some(state) = &self.state {
+                        if let Some(task) = state.tasks.get(&task_id) {
+                            // Can only stash queued tasks
+                            if matches!(task.status, TaskStatus::Queued { .. }) {
+                                if let Err(e) = client.stash(vec![task_id]).await {
+                                    self.error_message =
+                                        Some(format!("Failed to stash task: {}", e));
+                                } else {
+                                    self.refresh(client).await?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Action::EnqueueTask => {
+                if let Some(task_id) = self.get_selected_task_id() {
+                    if let Some(state) = &self.state {
+                        if let Some(task) = state.tasks.get(&task_id) {
+                            // Can only enqueue stashed tasks
+                            if matches!(task.status, TaskStatus::Stashed { .. }) {
+                                if let Err(e) = client.enqueue(vec![task_id]).await {
+                                    self.error_message =
+                                        Some(format!("Failed to enqueue task: {}", e));
+                                } else {
+                                    self.refresh(client).await?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Action::SwitchUp => {
+                if let Some(task_id) = self.get_selected_task_id() {
+                    let tasks = self.get_task_list();
+                    // Find the task before this one that can be switched
+                    if let Some(pos) = tasks.iter().position(|(id, _)| *id == task_id) {
+                        if pos > 0 {
+                            let other_id = tasks[pos - 1].0;
+                            if let Err(e) = client.switch(task_id, other_id).await {
+                                self.error_message = Some(format!("Failed to switch tasks: {}", e));
+                            } else {
+                                self.refresh(client).await?;
+                            }
+                        }
+                    }
+                }
+            }
+            Action::SwitchDown => {
+                if let Some(task_id) = self.get_selected_task_id() {
+                    let tasks = self.get_task_list();
+                    // Find the task after this one that can be switched
+                    if let Some(pos) = tasks.iter().position(|(id, _)| *id == task_id) {
+                        if pos < tasks.len() - 1 {
+                            let other_id = tasks[pos + 1].0;
+                            if let Err(e) = client.switch(task_id, other_id).await {
+                                self.error_message = Some(format!("Failed to switch tasks: {}", e));
+                            } else {
+                                self.refresh(client).await?;
+                            }
+                        }
+                    }
+                }
+            }
+            Action::IncreaseParallel => {
+                if let Some(state) = &self.state {
+                    if let Some(group) = state.groups.get("default") {
+                        let new_limit = group.parallel_tasks + 1;
+                        if let Err(e) = client.parallel("default", new_limit).await {
+                            self.error_message =
+                                Some(format!("Failed to increase parallel: {}", e));
+                        } else {
+                            self.refresh(client).await?;
+                        }
+                    }
+                }
+            }
+            Action::DecreaseParallel => {
+                if let Some(state) = &self.state {
+                    if let Some(group) = state.groups.get("default") {
+                        if group.parallel_tasks > 1 {
+                            let new_limit = group.parallel_tasks - 1;
+                            if let Err(e) = client.parallel("default", new_limit).await {
+                                self.error_message =
+                                    Some(format!("Failed to decrease parallel: {}", e));
+                            } else {
+                                self.refresh(client).await?;
+                            }
+                        }
+                    }
+                }
             }
             Action::Quit => {
                 return Ok(true);

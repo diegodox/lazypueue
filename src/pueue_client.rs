@@ -1,7 +1,8 @@
 use anyhow::Result;
 use pueue_lib::message::request::{
-    AddRequest, CleanRequest, KillRequest, LogRequest, PauseRequest, Request, RestartRequest,
-    StartRequest, TaskSelection, TaskToRestart,
+    AddRequest, CleanRequest, EnqueueRequest, KillRequest, LogRequest, ParallelRequest,
+    PauseRequest, Request, RestartRequest, StartRequest, StashRequest, SwitchRequest,
+    TaskSelection, TaskToRestart,
 };
 use pueue_lib::message::response::*;
 use pueue_lib::message::EditableTask;
@@ -264,6 +265,72 @@ impl PueueClient {
         match response {
             Response::Success(_) => Ok(()),
             Response::Failure(text) => Err(anyhow::anyhow!("Failed to submit edit: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    /// Stash tasks (hold them from execution).
+    pub async fn stash(&mut self, task_ids: Vec<usize>) -> Result<()> {
+        let request = Request::Stash(StashRequest {
+            tasks: TaskSelection::TaskIds(task_ids),
+            enqueue_at: None,
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to stash task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    /// Enqueue stashed tasks.
+    pub async fn enqueue(&mut self, task_ids: Vec<usize>) -> Result<()> {
+        let request = Request::Enqueue(EnqueueRequest {
+            tasks: TaskSelection::TaskIds(task_ids),
+            enqueue_at: None,
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to enqueue task: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    /// Switch the position of two tasks in the queue.
+    pub async fn switch(&mut self, task_id_1: usize, task_id_2: usize) -> Result<()> {
+        let request = Request::Switch(SwitchRequest {
+            task_id_1,
+            task_id_2,
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to switch tasks: {}", text)),
+            _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
+        }
+    }
+
+    /// Set the parallel task limit for a group.
+    pub async fn parallel(&mut self, group: &str, limit: usize) -> Result<()> {
+        let request = Request::Parallel(ParallelRequest {
+            parallel_tasks: limit,
+            group: group.to_string(),
+        });
+        self.client.send_request(request).await?;
+        let response = self.client.receive_response().await?;
+
+        match response {
+            Response::Success(_) => Ok(()),
+            Response::Failure(text) => {
+                Err(anyhow::anyhow!("Failed to set parallel limit: {}", text))
+            }
             _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
         }
     }

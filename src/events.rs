@@ -83,6 +83,18 @@ pub fn handle_key_event(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('e') => Some(Action::StartEditTask),
         KeyCode::Char('d') | KeyCode::Char('x') => Some(Action::RemoveTask),
 
+        // Stash/Enqueue
+        KeyCode::Char('s') => Some(Action::StashTask),
+        KeyCode::Char('S') => Some(Action::EnqueueTask),
+
+        // Switch task order
+        KeyCode::Char('<') => Some(Action::SwitchUp),
+        KeyCode::Char('>') => Some(Action::SwitchDown),
+
+        // Parallel limit
+        KeyCode::Char('+') | KeyCode::Char('=') => Some(Action::IncreaseParallel),
+        KeyCode::Char('-') | KeyCode::Char('_') => Some(Action::DecreaseParallel),
+
         // Viewing
         KeyCode::Enter | KeyCode::Char('l') => Some(Action::ViewLogs),
         KeyCode::Char('f') => Some(Action::FollowLogs),
