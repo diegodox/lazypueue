@@ -179,10 +179,12 @@ impl PueueClient {
     }
 
     pub async fn add(&mut self, command: String) -> Result<usize> {
+        // Inherit current environment so tasks have access to PATH and other vars
+        let envs: HashMap<String, String> = std::env::vars().collect();
         let request = Request::Add(AddRequest {
             command,
             path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
-            envs: std::collections::HashMap::new(),
+            envs,
             start_immediately: false,
             stashed: false,
             group: "default".to_string(),
