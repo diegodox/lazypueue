@@ -107,6 +107,10 @@ pub fn handle_key_event(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('+') | KeyCode::Char('=') => Some(Action::IncreaseParallel),
         KeyCode::Char('-') | KeyCode::Char('_') => Some(Action::DecreaseParallel),
 
+        // Group navigation
+        KeyCode::Tab => Some(Action::NextGroup),
+        KeyCode::BackTab => Some(Action::PrevGroup),
+
         // Viewing
         KeyCode::Enter | KeyCode::Char('l') => Some(Action::ViewLogs),
         KeyCode::Char('f') => Some(Action::FollowLogs),

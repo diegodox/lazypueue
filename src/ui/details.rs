@@ -79,7 +79,13 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
                 TaskResult::Success => "0".to_string(),
                 _ => "-".to_string(),
             };
-            ((status_label, color), start_str, end_str, dur_str, exit_code_str)
+            (
+                (status_label, color),
+                start_str,
+                end_str,
+                dur_str,
+                exit_code_str,
+            )
         }
         TaskStatus::Queued { .. } => (
             ("Queued", Color::Yellow),
@@ -155,7 +161,10 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
             Span::styled("Label: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(label_str),
             Span::raw("  "),
-            Span::styled("Dependencies: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Dependencies: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw(deps_str),
         ]),
         Line::from(vec![

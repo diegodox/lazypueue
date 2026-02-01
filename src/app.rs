@@ -46,6 +46,9 @@ pub enum Action {
     SwitchDown,
     IncreaseParallel,
     DecreaseParallel,
+    // Group navigation
+    NextGroup,
+    PrevGroup,
     // Confirmation actions
     ConfirmAction,
     CancelConfirm,
@@ -73,6 +76,8 @@ pub struct App {
     pub text_input: TextInput,
     // Confirmation dialog state
     pub confirm_delete: Option<usize>,
+    // Group filtering: None = "All", Some(name) = specific group
+    pub current_group: Option<String>,
 }
 
 impl Default for App {
@@ -89,6 +94,7 @@ impl Default for App {
             input_mode: None,
             text_input: TextInput::new(),
             confirm_delete: None,
+            current_group: None, // Start with "All" groups
         }
     }
 }
@@ -105,14 +111,12 @@ impl App {
                 self.error_message = None;
                 self.last_update = Instant::now();
 
-                // Adjust selected index if out of bounds
-                if let Some(state) = &self.state {
-                    let task_count = state.tasks.len();
-                    if task_count == 0 {
-                        self.selected_index = 0;
-                    } else if self.selected_index >= task_count {
-                        self.selected_index = task_count.saturating_sub(1);
-                    }
+                // Adjust selected index if out of bounds (based on filtered task list)
+                let task_count = self.get_task_list().len();
+                if task_count == 0 {
+                    self.selected_index = 0;
+                } else if self.selected_index >= task_count {
+                    self.selected_index = task_count.saturating_sub(1);
                 }
             }
             Err(e) => {
@@ -134,22 +138,18 @@ impl App {
                 }
             }
             Action::NavigateDown => {
-                if let Some(state) = &self.state {
-                    let task_count = state.tasks.len();
-                    if task_count > 0 && self.selected_index < task_count - 1 {
-                        self.selected_index += 1;
-                    }
+                let task_count = self.get_task_list().len();
+                if task_count > 0 && self.selected_index < task_count - 1 {
+                    self.selected_index += 1;
                 }
             }
             Action::NavigateTop => {
                 self.selected_index = 0;
             }
             Action::NavigateBottom => {
-                if let Some(state) = &self.state {
-                    let task_count = state.tasks.len();
-                    if task_count > 0 {
-                        self.selected_index = task_count - 1;
-                    }
+                let task_count = self.get_task_list().len();
+                if task_count > 0 {
+                    self.selected_index = task_count - 1;
                 }
             }
             Action::KillTask => {
@@ -159,14 +159,15 @@ impl App {
                 }
             }
             Action::TogglePause => {
+                let group_name = self.current_group.as_deref().unwrap_or("default");
                 if let Some(state) = &self.state {
-                    if let Some(group) = state.groups.get("default") {
+                    if let Some(group) = state.groups.get(group_name) {
                         match group.status {
                             pueue_lib::state::GroupStatus::Paused => {
-                                client.start().await?;
+                                client.start_group(group_name).await?;
                             }
                             _ => {
-                                client.pause().await?;
+                                client.pause_group(group_name).await?;
                             }
                         }
                     }
@@ -242,7 +243,8 @@ impl App {
                 }
             }
             Action::CleanFinished => {
-                if let Err(e) = client.clean(false).await {
+                // Clean current group only, or all if "All" selected
+                if let Err(e) = client.clean(false, self.current_group.as_deref()).await {
                     self.error_message = Some(format!("Failed to clean tasks: {}", e));
                 } else {
                     self.refresh(client).await?;
@@ -357,14 +359,19 @@ impl App {
                     let command = self.text_input.value.clone();
                     if !command.trim().is_empty() {
                         match mode {
-                            InputMode::AddTask => match client.add(command).await {
-                                Ok(_task_id) => {
-                                    self.refresh(client).await?;
+                            InputMode::AddTask => {
+                                // Add to current group, or "default" if viewing All
+                                let group = self.current_group.as_deref().unwrap_or("default");
+                                match client.add(command, group).await {
+                                    Ok(_task_id) => {
+                                        self.refresh(client).await?;
+                                    }
+                                    Err(e) => {
+                                        self.error_message =
+                                            Some(format!("Failed to add task: {}", e));
+                                    }
                                 }
-                                Err(e) => {
-                                    self.error_message = Some(format!("Failed to add task: {}", e));
-                                }
-                            },
+                            }
                             InputMode::EditTask(mut editable) => {
                                 editable.original_command = command;
                                 if let Err(e) = client.edit_submit(editable).await {
@@ -508,10 +515,11 @@ impl App {
                 }
             }
             Action::IncreaseParallel => {
+                let group_name = self.current_group.as_deref().unwrap_or("default");
                 if let Some(state) = &self.state {
-                    if let Some(group) = state.groups.get("default") {
+                    if let Some(group) = state.groups.get(group_name) {
                         let new_limit = group.parallel_tasks + 1;
-                        if let Err(e) = client.parallel("default", new_limit).await {
+                        if let Err(e) = client.parallel(group_name, new_limit).await {
                             self.error_message =
                                 Some(format!("Failed to increase parallel: {}", e));
                         } else {
@@ -521,11 +529,12 @@ impl App {
                 }
             }
             Action::DecreaseParallel => {
+                let group_name = self.current_group.as_deref().unwrap_or("default");
                 if let Some(state) = &self.state {
-                    if let Some(group) = state.groups.get("default") {
+                    if let Some(group) = state.groups.get(group_name) {
                         if group.parallel_tasks > 1 {
                             let new_limit = group.parallel_tasks - 1;
-                            if let Err(e) = client.parallel("default", new_limit).await {
+                            if let Err(e) = client.parallel(group_name, new_limit).await {
                                 self.error_message =
                                     Some(format!("Failed to decrease parallel: {}", e));
                             } else {
@@ -533,6 +542,48 @@ impl App {
                             }
                         }
                     }
+                }
+            }
+            Action::NextGroup => {
+                let groups = self.get_group_list();
+                if !groups.is_empty() {
+                    self.current_group = match &self.current_group {
+                        None => Some(groups[0].clone()), // All -> first group
+                        Some(current) => {
+                            if let Some(pos) = groups.iter().position(|g| g == current) {
+                                if pos + 1 < groups.len() {
+                                    Some(groups[pos + 1].clone()) // Next group
+                                } else {
+                                    None // Last group -> All
+                                }
+                            } else {
+                                None // Group not found -> All
+                            }
+                        }
+                    };
+                    // Reset selection when switching groups
+                    self.selected_index = 0;
+                }
+            }
+            Action::PrevGroup => {
+                let groups = self.get_group_list();
+                if !groups.is_empty() {
+                    self.current_group = match &self.current_group {
+                        None => Some(groups[groups.len() - 1].clone()), // All -> last group
+                        Some(current) => {
+                            if let Some(pos) = groups.iter().position(|g| g == current) {
+                                if pos > 0 {
+                                    Some(groups[pos - 1].clone()) // Previous group
+                                } else {
+                                    None // First group -> All
+                                }
+                            } else {
+                                None // Group not found -> All
+                            }
+                        }
+                    };
+                    // Reset selection when switching groups
+                    self.selected_index = 0;
                 }
             }
             Action::Quit => {
@@ -543,19 +594,52 @@ impl App {
     }
 
     pub fn get_selected_task_id(&self) -> Option<usize> {
-        self.state.as_ref().and_then(|state| {
-            let task_ids: Vec<usize> = state.tasks.keys().copied().collect();
-            task_ids.get(self.selected_index).copied()
-        })
+        let tasks = self.get_task_list();
+        tasks.get(self.selected_index).map(|(id, _)| *id)
     }
 
     pub fn get_task_list(&self) -> Vec<(usize, &pueue_lib::task::Task)> {
         if let Some(state) = &self.state {
-            let mut tasks: Vec<_> = state.tasks.iter().map(|(id, task)| (*id, task)).collect();
+            let mut tasks: Vec<_> = state
+                .tasks
+                .iter()
+                .filter(|(_, task)| {
+                    // Filter by current group if one is selected
+                    match &self.current_group {
+                        None => true, // "All" groups - show everything
+                        Some(group) => task.group == *group,
+                    }
+                })
+                .map(|(id, task)| (*id, task))
+                .collect();
             tasks.sort_by_key(|(id, _)| *id);
             tasks
         } else {
             Vec::new()
+        }
+    }
+
+    /// Get list of all group names, sorted alphabetically with "default" first
+    pub fn get_group_list(&self) -> Vec<String> {
+        if let Some(state) = &self.state {
+            let mut groups: Vec<_> = state.groups.keys().cloned().collect();
+            groups.sort();
+            // Move "default" to front if present
+            if let Some(pos) = groups.iter().position(|g| g == "default") {
+                groups.remove(pos);
+                groups.insert(0, "default".to_string());
+            }
+            groups
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Get the name of the currently selected group for display
+    pub fn current_group_display(&self) -> &str {
+        match &self.current_group {
+            None => "All",
+            Some(group) => group,
         }
     }
 

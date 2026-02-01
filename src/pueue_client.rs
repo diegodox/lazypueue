@@ -83,9 +83,9 @@ impl PueueClient {
         }
     }
 
-    pub async fn pause(&mut self) -> Result<()> {
+    pub async fn pause_group(&mut self, group: &str) -> Result<()> {
         let request = Request::Pause(PauseRequest {
-            tasks: TaskSelection::Group("default".to_string()),
+            tasks: TaskSelection::Group(group.to_string()),
             wait: false,
         });
         self.client.send_request(request).await?;
@@ -93,21 +93,21 @@ impl PueueClient {
 
         match response {
             Response::Success(_) => Ok(()),
-            Response::Failure(text) => Err(anyhow::anyhow!("Failed to pause daemon: {}", text)),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to pause group: {}", text)),
             _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
         }
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start_group(&mut self, group: &str) -> Result<()> {
         let request = Request::Start(StartRequest {
-            tasks: TaskSelection::Group("default".to_string()),
+            tasks: TaskSelection::Group(group.to_string()),
         });
         self.client.send_request(request).await?;
         let response = self.client.receive_response().await?;
 
         match response {
             Response::Success(_) => Ok(()),
-            Response::Failure(text) => Err(anyhow::anyhow!("Failed to start daemon: {}", text)),
+            Response::Failure(text) => Err(anyhow::anyhow!("Failed to start group: {}", text)),
             _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
         }
     }
@@ -163,10 +163,10 @@ impl PueueClient {
         }
     }
 
-    pub async fn clean(&mut self, successful_only: bool) -> Result<()> {
+    pub async fn clean(&mut self, successful_only: bool, group: Option<&str>) -> Result<()> {
         let request = Request::Clean(CleanRequest {
             successful_only,
-            group: None, // Clean all groups
+            group: group.map(|g| g.to_string()),
         });
         self.client.send_request(request).await?;
         let response = self.client.receive_response().await?;
@@ -178,7 +178,7 @@ impl PueueClient {
         }
     }
 
-    pub async fn add(&mut self, command: String) -> Result<usize> {
+    pub async fn add(&mut self, command: String, group: &str) -> Result<usize> {
         // Inherit current environment so tasks have access to PATH and other vars
         let envs: HashMap<String, String> = std::env::vars().collect();
         let request = Request::Add(AddRequest {
@@ -187,7 +187,7 @@ impl PueueClient {
             envs,
             start_immediately: false,
             stashed: false,
-            group: "default".to_string(),
+            group: group.to_string(),
             enqueue_at: None,
             dependencies: vec![],
             priority: None,
