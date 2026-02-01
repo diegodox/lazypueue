@@ -58,6 +58,18 @@ pub fn handle_log_modal_key_event(key: KeyEvent) -> Option<Action> {
     }
 }
 
+/// Handle key events when a confirmation dialog is shown
+pub fn handle_confirm_mode_key_event(key: KeyEvent) -> Option<Action> {
+    match key.code {
+        // Confirm with y or Enter
+        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => Some(Action::ConfirmAction),
+        // Cancel with n, Escape, or any other key
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => Some(Action::CancelConfirm),
+        // Any other key cancels
+        _ => Some(Action::CancelConfirm),
+    }
+}
+
 /// Handle key events in the main view
 pub fn handle_key_event(key: KeyEvent) -> Option<Action> {
     // Check for Ctrl+C first (quit)

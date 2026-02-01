@@ -46,6 +46,9 @@ pub enum Action {
     SwitchDown,
     IncreaseParallel,
     DecreaseParallel,
+    // Confirmation actions
+    ConfirmAction,
+    CancelConfirm,
     Quit,
 }
 
@@ -68,6 +71,8 @@ pub struct App {
     // Input mode state
     pub input_mode: Option<InputMode>,
     pub text_input: TextInput,
+    // Confirmation dialog state
+    pub confirm_delete: Option<usize>,
 }
 
 impl Default for App {
@@ -83,6 +88,7 @@ impl Default for App {
             error_message: None,
             input_mode: None,
             text_input: TextInput::new(),
+            confirm_delete: None,
         }
     }
 }
@@ -327,16 +333,24 @@ impl App {
                         if let Some(task) = state.tasks.get(&task_id) {
                             // Only allow removing non-running tasks
                             if !matches!(task.status, TaskStatus::Running { .. }) {
-                                if let Err(e) = client.remove(vec![task_id]).await {
-                                    self.error_message =
-                                        Some(format!("Failed to remove task: {}", e));
-                                } else {
-                                    self.refresh(client).await?;
-                                }
+                                // Set confirmation state instead of immediate delete
+                                self.confirm_delete = Some(task_id);
                             }
                         }
                     }
                 }
+            }
+            Action::ConfirmAction => {
+                if let Some(task_id) = self.confirm_delete.take() {
+                    if let Err(e) = client.remove(vec![task_id]).await {
+                        self.error_message = Some(format!("Failed to remove task: {}", e));
+                    } else {
+                        self.refresh(client).await?;
+                    }
+                }
+            }
+            Action::CancelConfirm => {
+                self.confirm_delete = None;
             }
             Action::SubmitInput => {
                 if let Some(mode) = self.input_mode.take() {

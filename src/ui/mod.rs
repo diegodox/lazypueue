@@ -63,6 +63,66 @@ pub fn render(f: &mut Frame, app: &App) {
         let area = input_dialog_rect(f.area());
         render_input_dialog(f, title, &app.text_input, area);
     }
+
+    // Render delete confirmation dialog
+    if let Some(task_id) = app.confirm_delete {
+        render_confirm_dialog(f, app, task_id);
+    }
+}
+
+fn render_confirm_dialog(f: &mut Frame, app: &App, task_id: usize) {
+    let command = app
+        .state
+        .as_ref()
+        .and_then(|s| s.tasks.get(&task_id))
+        .map(|t| t.command.as_str())
+        .unwrap_or("(unknown)");
+
+    // Truncate command if too long
+    let display_cmd = if command.len() > 50 {
+        format!("{}...", &command[..47])
+    } else {
+        command.to_string()
+    };
+
+    let text = format!(
+        "Delete task #{}?\n\n  {}\n\n(y)es  (n)o",
+        task_id, display_cmd
+    );
+
+    let confirm_block = Block::default()
+        .title("Confirm Delete")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let confirm_text = Paragraph::new(text)
+        .block(confirm_block)
+        .wrap(Wrap { trim: false });
+
+    let area = confirm_dialog_rect(f.area());
+    f.render_widget(Clear, area);
+    f.render_widget(confirm_text, area);
+}
+
+fn confirm_dialog_rect(r: Rect) -> Rect {
+    // Small centered dialog
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(35),
+            Constraint::Length(7),
+            Constraint::Percentage(65),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Percentage(50),
+            Constraint::Percentage(25),
+        ])
+        .split(popup_layout[1])[1]
 }
 
 fn render_error(f: &mut Frame, error: &str) {
