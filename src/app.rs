@@ -216,15 +216,17 @@ impl App {
                 if let Some(task_id) = self.get_selected_task_id() {
                     if let Some(state) = &self.state {
                         if let Some(task) = state.tasks.get(&task_id) {
-                            use pueue_lib::message::request::TaskToRestart;
-                            let task_to_restart = TaskToRestart {
-                                task_id,
-                                original_command: task.command.clone(),
+                            // Restart by creating a new task copy at end of queue (default pueue behavior)
+                            use crate::pueue_client::RestartOptions;
+                            let opts = RestartOptions {
+                                command: task.command.clone(),
                                 path: task.path.clone(),
+                                envs: task.envs.clone(),
+                                group: task.group.clone(),
+                                priority: Some(task.priority),
                                 label: task.label.clone(),
-                                priority: task.priority,
                             };
-                            if let Err(e) = client.restart(vec![task_to_restart]).await {
+                            if let Err(e) = client.restart(opts).await {
                                 self.error_message = Some(format!("Failed to restart task: {}", e));
                             } else {
                                 self.refresh(client).await?;
@@ -285,8 +287,15 @@ impl App {
                                             Some(format!("Failed to start task: {}", e));
                                     }
                                 }
+                                TaskStatus::Stashed { .. } => {
+                                    // Force-start stashed task (like 'pueue start <id>')
+                                    if let Err(e) = client.start_tasks(vec![task_id]).await {
+                                        self.error_message =
+                                            Some(format!("Failed to start task: {}", e));
+                                    }
+                                }
                                 _ => {
-                                    // Can't pause/resume completed or stashed tasks
+                                    // Can't pause/resume completed tasks
                                 }
                             }
                             self.refresh(client).await?;
@@ -422,15 +431,31 @@ impl App {
             }
             Action::SwitchUp => {
                 if let Some(task_id) = self.get_selected_task_id() {
-                    let tasks = self.get_task_list();
-                    // Find the task before this one that can be switched
-                    if let Some(pos) = tasks.iter().position(|(id, _)| *id == task_id) {
-                        if pos > 0 {
-                            let other_id = tasks[pos - 1].0;
-                            if let Err(e) = client.switch(task_id, other_id).await {
-                                self.error_message = Some(format!("Failed to switch tasks: {}", e));
-                            } else {
-                                self.refresh(client).await?;
+                    if let Some(state) = &self.state {
+                        let tasks = self.get_task_list();
+                        // Find the task before this one that can be switched
+                        if let Some(pos) = tasks.iter().position(|(id, _)| *id == task_id) {
+                            if pos > 0 {
+                                let other_id = tasks[pos - 1].0;
+                                // Validate both tasks can be switched (queued or stashed only)
+                                let task1 = state.tasks.get(&task_id);
+                                let task2 = state.tasks.get(&other_id);
+                                if let (Some(t1), Some(t2)) = (task1, task2) {
+                                    let can_switch = |s: &TaskStatus| {
+                                        matches!(
+                                            s,
+                                            TaskStatus::Queued { .. } | TaskStatus::Stashed { .. }
+                                        )
+                                    };
+                                    if can_switch(&t1.status) && can_switch(&t2.status) {
+                                        if let Err(e) = client.switch(task_id, other_id).await {
+                                            self.error_message =
+                                                Some(format!("Failed to switch tasks: {}", e));
+                                        } else {
+                                            self.refresh(client).await?;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -438,15 +463,31 @@ impl App {
             }
             Action::SwitchDown => {
                 if let Some(task_id) = self.get_selected_task_id() {
-                    let tasks = self.get_task_list();
-                    // Find the task after this one that can be switched
-                    if let Some(pos) = tasks.iter().position(|(id, _)| *id == task_id) {
-                        if pos < tasks.len() - 1 {
-                            let other_id = tasks[pos + 1].0;
-                            if let Err(e) = client.switch(task_id, other_id).await {
-                                self.error_message = Some(format!("Failed to switch tasks: {}", e));
-                            } else {
-                                self.refresh(client).await?;
+                    if let Some(state) = &self.state {
+                        let tasks = self.get_task_list();
+                        // Find the task after this one that can be switched
+                        if let Some(pos) = tasks.iter().position(|(id, _)| *id == task_id) {
+                            if pos < tasks.len() - 1 {
+                                let other_id = tasks[pos + 1].0;
+                                // Validate both tasks can be switched (queued or stashed only)
+                                let task1 = state.tasks.get(&task_id);
+                                let task2 = state.tasks.get(&other_id);
+                                if let (Some(t1), Some(t2)) = (task1, task2) {
+                                    let can_switch = |s: &TaskStatus| {
+                                        matches!(
+                                            s,
+                                            TaskStatus::Queued { .. } | TaskStatus::Stashed { .. }
+                                        )
+                                    };
+                                    if can_switch(&t1.status) && can_switch(&t2.status) {
+                                        if let Err(e) = client.switch(task_id, other_id).await {
+                                            self.error_message =
+                                                Some(format!("Failed to switch tasks: {}", e));
+                                        } else {
+                                            self.refresh(client).await?;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

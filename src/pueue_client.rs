@@ -1,15 +1,25 @@
 use anyhow::Result;
 use pueue_lib::message::request::{
     AddRequest, CleanRequest, EnqueueRequest, KillRequest, LogRequest, ParallelRequest,
-    PauseRequest, Request, RestartRequest, StartRequest, StashRequest, SwitchRequest,
-    TaskSelection, TaskToRestart,
+    PauseRequest, Request, StartRequest, StashRequest, SwitchRequest, TaskSelection,
 };
 use pueue_lib::message::response::*;
 use pueue_lib::message::EditableTask;
 use pueue_lib::network::client::Client;
 use pueue_lib::settings::Settings;
 use pueue_lib::state::State;
+use std::collections::HashMap;
 use std::path::PathBuf;
+
+/// Options for restarting a task (creating a new copy at end of queue).
+pub struct RestartOptions {
+    pub command: String,
+    pub path: PathBuf,
+    pub envs: HashMap<String, String>,
+    pub group: String,
+    pub priority: Option<i32>,
+    pub label: Option<String>,
+}
 
 pub struct PueueClient {
     client: Client,
@@ -129,17 +139,25 @@ impl PueueClient {
         }
     }
 
-    pub async fn restart(&mut self, tasks_info: Vec<TaskToRestart>) -> Result<()> {
-        let request = Request::Restart(RestartRequest {
-            tasks: tasks_info,
+    /// Restart a task by creating a new copy at the end of the queue (default pueue behavior).
+    pub async fn restart(&mut self, opts: RestartOptions) -> Result<usize> {
+        let request = Request::Add(AddRequest {
+            command: opts.command,
+            path: opts.path,
+            envs: opts.envs,
             start_immediately: false,
             stashed: false,
+            group: opts.group,
+            enqueue_at: None,
+            dependencies: vec![],
+            priority: opts.priority,
+            label: opts.label,
         });
         self.client.send_request(request).await?;
         let response = self.client.receive_response().await?;
 
         match response {
-            Response::Success(_) => Ok(()),
+            Response::AddedTask(added) => Ok(added.task_id),
             Response::Failure(text) => Err(anyhow::anyhow!("Failed to restart task: {}", text)),
             _ => Err(anyhow::anyhow!("Unexpected response from daemon")),
         }
