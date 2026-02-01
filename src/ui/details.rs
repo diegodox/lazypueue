@@ -12,10 +12,10 @@ pub fn render_details_panel(f: &mut Frame, app: &App, area: Rect) {
     if let Some(task_id) = app.get_selected_task_id() {
         let tasks = app.get_task_list();
         if let Some((_, task)) = tasks.iter().find(|(id, _)| *id == task_id) {
-            // Split into metadata and output sections
+            // Split into metadata and output sections (11 lines + 2 for borders = 13)
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(8), Constraint::Min(0)])
+                .constraints([Constraint::Length(13), Constraint::Min(0)])
                 .split(area);
 
             // Render metadata
@@ -34,7 +34,7 @@ pub fn render_details_panel(f: &mut Frame, app: &App, area: Rect) {
 fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, area: Rect) {
     use pueue_lib::task::TaskResult;
 
-    let (status_text, start_time, duration, exit_code) = match &task.status {
+    let (status_text, start_time, end_time, duration, exit_code) = match &task.status {
         TaskStatus::Running { start, .. } => {
             let start_str = start.format("%Y-%m-%d %H:%M:%S").to_string();
             let dur = chrono::Local::now() - *start;
@@ -42,6 +42,7 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
             (
                 ("Running", Color::Green),
                 start_str,
+                "-".to_string(),
                 dur_str,
                 "-".to_string(),
             )
@@ -50,12 +51,19 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
             let start_str = start.format("%Y-%m-%d %H:%M:%S").to_string();
             let dur = chrono::Local::now() - *start;
             let dur_str = format_duration(dur.num_seconds());
-            (("Paused", Color::Cyan), start_str, dur_str, "-".to_string())
+            (
+                ("Paused", Color::Cyan),
+                start_str,
+                "-".to_string(),
+                dur_str,
+                "-".to_string(),
+            )
         }
         TaskStatus::Done {
             start, end, result, ..
         } => {
             let start_str = start.format("%Y-%m-%d %H:%M:%S").to_string();
+            let end_str = end.format("%Y-%m-%d %H:%M:%S").to_string();
             let dur = *end - *start;
             let dur_str = format_duration(dur.num_seconds());
             let (status_label, color) = match result {
@@ -71,50 +79,101 @@ fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, 
                 TaskResult::Success => "0".to_string(),
                 _ => "-".to_string(),
             };
-            ((status_label, color), start_str, dur_str, exit_code_str)
+            ((status_label, color), start_str, end_str, dur_str, exit_code_str)
         }
         TaskStatus::Queued { .. } => (
             ("Queued", Color::Yellow),
-            "Not started".to_string(),
+            "-".to_string(),
+            "-".to_string(),
             "-".to_string(),
             "-".to_string(),
         ),
         TaskStatus::Stashed { .. } => (
             ("Stashed", Color::Gray),
-            "Not started".to_string(),
+            "-".to_string(),
+            "-".to_string(),
             "-".to_string(),
             "-".to_string(),
         ),
         TaskStatus::Locked { .. } => (
             ("Locked", Color::Magenta),
-            "Locked".to_string(),
+            "-".to_string(),
+            "-".to_string(),
             "-".to_string(),
             "-".to_string(),
         ),
     };
 
+    // Format label
+    let label_str = task.label.as_deref().unwrap_or("-");
+
+    // Format dependencies
+    let deps_str = if task.dependencies.is_empty() {
+        "-".to_string()
+    } else {
+        task.dependencies
+            .iter()
+            .map(|d| d.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    // Format created_at
+    let created_str = task.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // Format path (truncate if too long)
+    let path_str = task.path.to_string_lossy();
+    let path_display = if path_str.len() > 50 {
+        format!("...{}", &path_str[path_str.len() - 47..])
+    } else {
+        path_str.to_string()
+    };
+
     let lines = vec![
         Line::from(vec![
             Span::styled("Task #", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(task_id.to_string()),
+            Span::raw(format!("{}  ", task_id)),
+            Span::styled("Group: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(&task.group),
         ]),
         Line::from(vec![
             Span::styled("Command: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(&task.command),
         ]),
         Line::from(vec![
+            Span::styled("Path: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(path_display, Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
             Span::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(status_text.0, Style::default().fg(status_text.1)),
+            Span::raw("  "),
+            Span::styled("Priority: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(task.priority.to_string()),
+        ]),
+        Line::from(vec![
+            Span::styled("Label: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(label_str),
+            Span::raw("  "),
+            Span::styled("Dependencies: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(deps_str),
+        ]),
+        Line::from(vec![
+            Span::styled("Created: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(created_str),
         ]),
         Line::from(vec![
             Span::styled("Started: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(start_time),
         ]),
         Line::from(vec![
-            Span::styled("Duration: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(duration),
+            Span::styled("Ended: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(end_time),
         ]),
         Line::from(vec![
+            Span::styled("Duration: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(duration),
+            Span::raw("  "),
             Span::styled("Exit Code: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(exit_code),
         ]),
