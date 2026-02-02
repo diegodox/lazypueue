@@ -1,0 +1,27 @@
+# Rust
+/target/
+# Cargo.lock is committed for binaries (keep it for reproducible builds)
+**/*.rs.bk
+*.pdb
+
+# Nix
+result
+result-*
+.direnv/
+.envrc
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+*.profraw
+*.profdata
+
+# Pueue (project-local daemon)
+# Config is auto-generated in flake.nix shellHook
+.pueue/
