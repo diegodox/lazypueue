@@ -3,6 +3,7 @@ use lazypueue::{app::App, pueue_client::PueueClient, ui};
 use ratatui::{backend::TestBackend, Terminal};
 
 #[tokio::test]
+#[ignore] // Requires running pueue daemon - run with: cargo test -- --ignored
 async fn test_tui_renders() -> Result<()> {
     // Set up project-local pueue config (use env var if already set by nix shell)
     if std::env::var("PUEUE_CONFIG_PATH").is_err() {
