@@ -100,12 +100,15 @@ async fn test_tui_renders() -> Result<()> {
 
 #[test]
 fn test_app_state_management() {
+    use lazypueue::app::TreeSelection;
+
     let app = App::new();
 
     // Test initial state
-    assert_eq!(app.selected_index, 0);
-    assert_eq!(app.show_log_modal, false);
+    assert_eq!(app.selection, TreeSelection::Group("default".to_string()));
+    assert!(!app.show_log_modal);
     assert!(app.state.is_none());
+    assert!(app.collapsed_groups.is_empty());
 
     println!("✓ App initializes correctly");
 }

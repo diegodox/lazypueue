@@ -2,6 +2,7 @@ use anyhow::Result;
 use pueue_lib::message::EditableTask;
 use pueue_lib::state::State;
 use pueue_lib::task::TaskStatus;
+use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::pueue_client::PueueClient;
@@ -46,9 +47,9 @@ pub enum Action {
     SwitchDown,
     IncreaseParallel,
     DecreaseParallel,
-    // Group navigation
-    NextGroup,
-    PrevGroup,
+    // Tree navigation
+    CollapseGroup,
+    ExpandGroup,
     // Confirmation actions
     ConfirmAction,
     CancelConfirm,
@@ -62,9 +63,22 @@ pub enum InputMode {
     EditTask(EditableTask),
 }
 
+/// Tree selection - either a group header or a task within a group
+#[derive(Debug, Clone, PartialEq)]
+pub enum TreeSelection {
+    Group(String),       // Group name selected
+    Task(String, usize), // (group_name, task_id) selected
+}
+
+/// Item in the flattened tree view for navigation
+#[derive(Debug, Clone)]
+pub enum TreeItem {
+    Group(String),       // Group header
+    Task(String, usize), // (group_name, task_id)
+}
+
 pub struct App {
     pub state: Option<State>,
-    pub selected_index: usize,
     pub last_update: Instant,
     pub show_log_modal: bool,
     pub log_content: Option<String>,
@@ -76,15 +90,15 @@ pub struct App {
     pub text_input: TextInput,
     // Confirmation dialog state
     pub confirm_delete: Option<usize>,
-    // Group filtering: None = "All", Some(name) = specific group
-    pub current_group: Option<String>,
+    // Tree view state
+    pub selection: TreeSelection,
+    pub collapsed_groups: HashSet<String>,
 }
 
 impl Default for App {
     fn default() -> Self {
         Self {
             state: None,
-            selected_index: 0,
             last_update: Instant::now(),
             show_log_modal: false,
             log_content: None,
@@ -94,7 +108,8 @@ impl Default for App {
             input_mode: None,
             text_input: TextInput::new(),
             confirm_delete: None,
-            current_group: None, // Start with "All" groups
+            selection: TreeSelection::Group("default".to_string()),
+            collapsed_groups: HashSet::new(),
         }
     }
 }
@@ -111,19 +126,46 @@ impl App {
                 self.error_message = None;
                 self.last_update = Instant::now();
 
-                // Adjust selected index if out of bounds (based on filtered task list)
-                let task_count = self.get_task_list().len();
-                if task_count == 0 {
-                    self.selected_index = 0;
-                } else if self.selected_index >= task_count {
-                    self.selected_index = task_count.saturating_sub(1);
-                }
+                // Validate selection is still valid
+                self.validate_selection();
             }
             Err(e) => {
                 self.error_message = Some(format!("Failed to connect to pueue daemon: {}", e));
             }
         }
         Ok(())
+    }
+
+    /// Ensure current selection is still valid, adjust if needed
+    fn validate_selection(&mut self) {
+        let tree_items = self.get_tree_items();
+        if tree_items.is_empty() {
+            // No items - select default group
+            self.selection = TreeSelection::Group("default".to_string());
+            return;
+        }
+
+        // Check if current selection exists in tree
+        let is_valid = match &self.selection {
+            TreeSelection::Group(name) => tree_items
+                .iter()
+                .any(|item| matches!(item, TreeItem::Group(g) if g == name)),
+            TreeSelection::Task(group, task_id) => tree_items
+                .iter()
+                .any(|item| matches!(item, TreeItem::Task(g, id) if g == group && id == task_id)),
+        };
+
+        if !is_valid {
+            // Selection no longer valid - select first item
+            match &tree_items[0] {
+                TreeItem::Group(name) => {
+                    self.selection = TreeSelection::Group(name.clone());
+                }
+                TreeItem::Task(group, task_id) => {
+                    self.selection = TreeSelection::Task(group.clone(), *task_id);
+                }
+            }
+        }
     }
 
     pub async fn handle_action(
@@ -133,23 +175,31 @@ impl App {
     ) -> Result<bool> {
         match action {
             Action::NavigateUp => {
-                if self.selected_index > 0 {
-                    self.selected_index -= 1;
+                let tree_items = self.get_tree_items();
+                if let Some(current_pos) = self.get_selection_position(&tree_items) {
+                    if current_pos > 0 {
+                        self.select_tree_item(&tree_items[current_pos - 1]);
+                    }
                 }
             }
             Action::NavigateDown => {
-                let task_count = self.get_task_list().len();
-                if task_count > 0 && self.selected_index < task_count - 1 {
-                    self.selected_index += 1;
+                let tree_items = self.get_tree_items();
+                if let Some(current_pos) = self.get_selection_position(&tree_items) {
+                    if current_pos + 1 < tree_items.len() {
+                        self.select_tree_item(&tree_items[current_pos + 1]);
+                    }
                 }
             }
             Action::NavigateTop => {
-                self.selected_index = 0;
+                let tree_items = self.get_tree_items();
+                if let Some(first) = tree_items.first() {
+                    self.select_tree_item(first);
+                }
             }
             Action::NavigateBottom => {
-                let task_count = self.get_task_list().len();
-                if task_count > 0 {
-                    self.selected_index = task_count - 1;
+                let tree_items = self.get_tree_items();
+                if let Some(last) = tree_items.last() {
+                    self.select_tree_item(last);
                 }
             }
             Action::KillTask => {
@@ -159,15 +209,20 @@ impl App {
                 }
             }
             Action::TogglePause => {
-                let group_name = self.current_group.as_deref().unwrap_or("default");
+                // When group is selected, pause/resume the group
+                // When task is selected, pause/resume that task's group
+                let group_name = match &self.selection {
+                    TreeSelection::Group(name) => name.clone(),
+                    TreeSelection::Task(group, _) => group.clone(),
+                };
                 if let Some(state) = &self.state {
-                    if let Some(group) = state.groups.get(group_name) {
+                    if let Some(group) = state.groups.get(&group_name) {
                         match group.status {
                             pueue_lib::state::GroupStatus::Paused => {
-                                client.start_group(group_name).await?;
+                                client.start_group(&group_name).await?;
                             }
                             _ => {
-                                client.pause_group(group_name).await?;
+                                client.pause_group(&group_name).await?;
                             }
                         }
                     }
@@ -243,8 +298,12 @@ impl App {
                 }
             }
             Action::CleanFinished => {
-                // Clean current group only, or all if "All" selected
-                if let Err(e) = client.clean(false, self.current_group.as_deref()).await {
+                // Clean currently selected group (or task's group)
+                let group_name = match &self.selection {
+                    TreeSelection::Group(name) => Some(name.as_str()),
+                    TreeSelection::Task(group, _) => Some(group.as_str()),
+                };
+                if let Err(e) = client.clean(false, group_name).await {
                     self.error_message = Some(format!("Failed to clean tasks: {}", e));
                 } else {
                     self.refresh(client).await?;
@@ -360,8 +419,11 @@ impl App {
                     if !command.trim().is_empty() {
                         match mode {
                             InputMode::AddTask => {
-                                // Add to current group, or "default" if viewing All
-                                let group = self.current_group.as_deref().unwrap_or("default");
+                                // Add to currently selected group (or task's group)
+                                let group = match &self.selection {
+                                    TreeSelection::Group(name) => name.as_str(),
+                                    TreeSelection::Task(group, _) => group.as_str(),
+                                };
                                 match client.add(command, group).await {
                                     Ok(_task_id) => {
                                         self.refresh(client).await?;
@@ -515,11 +577,14 @@ impl App {
                 }
             }
             Action::IncreaseParallel => {
-                let group_name = self.current_group.as_deref().unwrap_or("default");
+                let group_name = match &self.selection {
+                    TreeSelection::Group(name) => name.clone(),
+                    TreeSelection::Task(group, _) => group.clone(),
+                };
                 if let Some(state) = &self.state {
-                    if let Some(group) = state.groups.get(group_name) {
+                    if let Some(group) = state.groups.get(&group_name) {
                         let new_limit = group.parallel_tasks + 1;
-                        if let Err(e) = client.parallel(group_name, new_limit).await {
+                        if let Err(e) = client.parallel(&group_name, new_limit).await {
                             self.error_message =
                                 Some(format!("Failed to increase parallel: {}", e));
                         } else {
@@ -529,12 +594,15 @@ impl App {
                 }
             }
             Action::DecreaseParallel => {
-                let group_name = self.current_group.as_deref().unwrap_or("default");
+                let group_name = match &self.selection {
+                    TreeSelection::Group(name) => name.clone(),
+                    TreeSelection::Task(group, _) => group.clone(),
+                };
                 if let Some(state) = &self.state {
-                    if let Some(group) = state.groups.get(group_name) {
+                    if let Some(group) = state.groups.get(&group_name) {
                         if group.parallel_tasks > 1 {
                             let new_limit = group.parallel_tasks - 1;
-                            if let Err(e) = client.parallel(group_name, new_limit).await {
+                            if let Err(e) = client.parallel(&group_name, new_limit).await {
                                 self.error_message =
                                     Some(format!("Failed to decrease parallel: {}", e));
                             } else {
@@ -544,46 +612,58 @@ impl App {
                     }
                 }
             }
-            Action::NextGroup => {
-                let groups = self.get_group_list();
-                if !groups.is_empty() {
-                    self.current_group = match &self.current_group {
-                        None => Some(groups[0].clone()), // All -> first group
-                        Some(current) => {
-                            if let Some(pos) = groups.iter().position(|g| g == current) {
-                                if pos + 1 < groups.len() {
-                                    Some(groups[pos + 1].clone()) // Next group
-                                } else {
-                                    None // Last group -> All
-                                }
-                            } else {
-                                None // Group not found -> All
-                            }
+            Action::CollapseGroup => {
+                match &self.selection {
+                    TreeSelection::Group(name) => {
+                        // If group is selected, toggle collapse
+                        if self.collapsed_groups.contains(name) {
+                            self.collapsed_groups.remove(name);
+                        } else {
+                            self.collapsed_groups.insert(name.clone());
                         }
-                    };
-                    // Reset selection when switching groups
-                    self.selected_index = 0;
+                    }
+                    TreeSelection::Task(group, _) => {
+                        // If task is selected, go to parent group
+                        self.selection = TreeSelection::Group(group.clone());
+                    }
                 }
             }
-            Action::PrevGroup => {
-                let groups = self.get_group_list();
-                if !groups.is_empty() {
-                    self.current_group = match &self.current_group {
-                        None => Some(groups[groups.len() - 1].clone()), // All -> last group
-                        Some(current) => {
-                            if let Some(pos) = groups.iter().position(|g| g == current) {
-                                if pos > 0 {
-                                    Some(groups[pos - 1].clone()) // Previous group
-                                } else {
-                                    None // First group -> All
+            Action::ExpandGroup => {
+                match &self.selection {
+                    TreeSelection::Group(name) => {
+                        if self.collapsed_groups.contains(name) {
+                            // Expand the group
+                            self.collapsed_groups.remove(name);
+                        } else {
+                            // Already expanded - select first task if any
+                            if let Some(state) = &self.state {
+                                let mut tasks_in_group: Vec<_> = state
+                                    .tasks
+                                    .iter()
+                                    .filter(|(_, t)| &t.group == name)
+                                    .map(|(id, _)| *id)
+                                    .collect();
+                                tasks_in_group.sort();
+                                if let Some(first_task_id) = tasks_in_group.first() {
+                                    self.selection =
+                                        TreeSelection::Task(name.clone(), *first_task_id);
                                 }
-                            } else {
-                                None // Group not found -> All
                             }
                         }
-                    };
-                    // Reset selection when switching groups
-                    self.selected_index = 0;
+                    }
+                    TreeSelection::Task(_, task_id) => {
+                        // Task selected - view logs
+                        match client.get_log(*task_id).await {
+                            Ok(content) => {
+                                self.log_content = Some(content);
+                                self.log_scroll = 0;
+                                self.show_log_modal = true;
+                            }
+                            Err(e) => {
+                                self.error_message = Some(format!("Failed to get logs: {}", e));
+                            }
+                        }
+                    }
                 }
             }
             Action::Quit => {
@@ -594,24 +674,69 @@ impl App {
     }
 
     pub fn get_selected_task_id(&self) -> Option<usize> {
-        let tasks = self.get_task_list();
-        tasks.get(self.selected_index).map(|(id, _)| *id)
+        match &self.selection {
+            TreeSelection::Task(_, task_id) => Some(*task_id),
+            TreeSelection::Group(_) => None,
+        }
+    }
+
+    /// Get the group name of the current selection
+    pub fn get_selected_group(&self) -> &str {
+        match &self.selection {
+            TreeSelection::Group(name) => name,
+            TreeSelection::Task(group, _) => group,
+        }
+    }
+
+    /// Build the flattened tree of visible items for navigation
+    pub fn get_tree_items(&self) -> Vec<TreeItem> {
+        let mut items = Vec::new();
+        let groups = self.get_group_list();
+
+        if let Some(state) = &self.state {
+            for group_name in groups {
+                // Add the group header
+                items.push(TreeItem::Group(group_name.clone()));
+
+                // If not collapsed, add tasks in this group
+                if !self.collapsed_groups.contains(&group_name) {
+                    let mut tasks_in_group: Vec<_> = state
+                        .tasks
+                        .iter()
+                        .filter(|(_, t)| t.group == group_name)
+                        .map(|(id, _)| *id)
+                        .collect();
+                    tasks_in_group.sort();
+                    for task_id in tasks_in_group {
+                        items.push(TreeItem::Task(group_name.clone(), task_id));
+                    }
+                }
+            }
+        }
+
+        items
+    }
+
+    /// Find the position of current selection in tree items
+    fn get_selection_position(&self, items: &[TreeItem]) -> Option<usize> {
+        items.iter().position(|item| match (&self.selection, item) {
+            (TreeSelection::Group(a), TreeItem::Group(b)) => a == b,
+            (TreeSelection::Task(g1, t1), TreeItem::Task(g2, t2)) => g1 == g2 && t1 == t2,
+            _ => false,
+        })
+    }
+
+    /// Select a tree item
+    fn select_tree_item(&mut self, item: &TreeItem) {
+        self.selection = match item {
+            TreeItem::Group(name) => TreeSelection::Group(name.clone()),
+            TreeItem::Task(group, task_id) => TreeSelection::Task(group.clone(), *task_id),
+        };
     }
 
     pub fn get_task_list(&self) -> Vec<(usize, &pueue_lib::task::Task)> {
         if let Some(state) = &self.state {
-            let mut tasks: Vec<_> = state
-                .tasks
-                .iter()
-                .filter(|(_, task)| {
-                    // Filter by current group if one is selected
-                    match &self.current_group {
-                        None => true, // "All" groups - show everything
-                        Some(group) => task.group == *group,
-                    }
-                })
-                .map(|(id, task)| (*id, task))
-                .collect();
+            let mut tasks: Vec<_> = state.tasks.iter().map(|(id, task)| (*id, task)).collect();
             tasks.sort_by_key(|(id, _)| *id);
             tasks
         } else {
@@ -632,14 +757,6 @@ impl App {
             groups
         } else {
             Vec::new()
-        }
-    }
-
-    /// Get the name of the currently selected group for display
-    pub fn current_group_display(&self) -> &str {
-        match &self.current_group {
-            None => "All",
-            Some(group) => group,
         }
     }
 

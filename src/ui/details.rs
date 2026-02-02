@@ -1,4 +1,5 @@
-use crate::app::App;
+use crate::app::{App, TreeSelection};
+use pueue_lib::state::GroupStatus;
 use pueue_lib::task::TaskStatus;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -9,26 +10,175 @@ use ratatui::{
 };
 
 pub fn render_details_panel(f: &mut Frame, app: &App, area: Rect) {
-    if let Some(task_id) = app.get_selected_task_id() {
-        let tasks = app.get_task_list();
-        if let Some((_, task)) = tasks.iter().find(|(id, _)| *id == task_id) {
-            // Split into metadata and output sections (11 lines + 2 for borders = 13)
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(13), Constraint::Min(0)])
-                .split(area);
-
-            // Render metadata
-            render_metadata(f, task_id, task, chunks[0]);
-
-            // Render output
-            render_output(f, task, chunks[1]);
-        } else {
-            render_empty(f, area);
+    match &app.selection {
+        TreeSelection::Group(name) => {
+            render_group_details(f, app, name, area);
         }
-    } else {
-        render_empty(f, area);
+        TreeSelection::Task(_, task_id) => {
+            render_task_details(f, app, *task_id, area);
+        }
     }
+}
+
+fn render_group_details(f: &mut Frame, app: &App, name: &str, area: Rect) {
+    let state = match &app.state {
+        Some(s) => s,
+        None => {
+            render_empty(f, area);
+            return;
+        }
+    };
+
+    let group = match state.groups.get(name) {
+        Some(g) => g,
+        None => {
+            render_empty(f, area);
+            return;
+        }
+    };
+
+    // Count tasks in group by status
+    let tasks_in_group: Vec<_> = state
+        .tasks
+        .iter()
+        .filter(|(_, t)| t.group == name)
+        .collect();
+    let total = tasks_in_group.len();
+    let running = tasks_in_group
+        .iter()
+        .filter(|(_, t)| matches!(t.status, TaskStatus::Running { .. }))
+        .count();
+    let queued = tasks_in_group
+        .iter()
+        .filter(|(_, t)| matches!(t.status, TaskStatus::Queued { .. }))
+        .count();
+    let paused = tasks_in_group
+        .iter()
+        .filter(|(_, t)| matches!(t.status, TaskStatus::Paused { .. }))
+        .count();
+    let stashed = tasks_in_group
+        .iter()
+        .filter(|(_, t)| matches!(t.status, TaskStatus::Stashed { .. }))
+        .count();
+    let done = tasks_in_group
+        .iter()
+        .filter(|(_, t)| matches!(t.status, TaskStatus::Done { .. }))
+        .count();
+
+    let (status_text, status_color) = match group.status {
+        GroupStatus::Running => ("Running", Color::Green),
+        GroupStatus::Paused => ("Paused", Color::Red),
+        GroupStatus::Reset => ("Reset", Color::Yellow),
+    };
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("Group: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(name, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(status_text, Style::default().fg(status_color)),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "Parallel Tasks: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(group.parallel_tasks.to_string()),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Task Summary:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![Span::raw("  Total: "), Span::raw(total.to_string())]),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("▶ Running: {}", running),
+                Style::default().fg(Color::Green),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("● Queued: {}", queued),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("⏸ Paused: {}", paused),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("⊡ Stashed: {}", stashed),
+                Style::default().fg(Color::Gray),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("✓ Done: {}", done),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Keybinds:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  p      Pause/resume group"),
+        Line::from("  +/-    Change parallel limit"),
+        Line::from("  a      Add task to group"),
+        Line::from("  c      Clean finished tasks"),
+        Line::from("  l/→    Expand / select first task"),
+        Line::from("  h/←    Collapse group"),
+    ];
+
+    let details = Paragraph::new(lines).block(
+        Block::default()
+            .title("Group Details")
+            .borders(Borders::ALL),
+    );
+
+    f.render_widget(details, area);
+}
+
+fn render_task_details(f: &mut Frame, app: &App, task_id: usize, area: Rect) {
+    let state = match &app.state {
+        Some(s) => s,
+        None => {
+            render_empty(f, area);
+            return;
+        }
+    };
+
+    let task = match state.tasks.get(&task_id) {
+        Some(t) => t,
+        None => {
+            render_empty(f, area);
+            return;
+        }
+    };
+
+    // Split into metadata and output sections (11 lines + 2 for borders = 13)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(13), Constraint::Min(0)])
+        .split(area);
+
+    // Render metadata
+    render_metadata(f, task_id, task, chunks[0]);
+
+    // Render output
+    render_output(f, task, chunks[1]);
 }
 
 fn render_metadata(f: &mut Frame, task_id: usize, task: &pueue_lib::task::Task, area: Rect) {
