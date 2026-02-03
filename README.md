@@ -13,10 +13,33 @@ lazypueue provides an interactive terminal interface for managing pueue tasks, i
 - 📊 Real-time task status updates
 - 🎨 Clean, intuitive interface
 
+## Installation
+
+### Nix (recommended)
+
+```bash
+# Run directly
+nix run github:diegodox/lazypueue
+
+# Or install to profile
+nix profile install github:diegodox/lazypueue
+```
+
+For faster builds, add the Cachix cache:
+
+```bash
+cachix use lazypueue
+```
+
+### From source
+
+```bash
+cargo install --git https://github.com/diegodox/lazypueue
+```
+
 ## Prerequisites
 
-- Nix with flakes enabled
-- [pueue](https://github.com/Nukesor/pueue) daemon running (automatically installed in dev environment)
+- [pueue](https://github.com/Nukesor/pueue) daemon running
 
 ## Development
 
